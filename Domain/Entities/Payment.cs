@@ -48,6 +48,15 @@ public class Payment
         return Result.Success();
     }
 
+    public Result Reject()
+    {
+        if (Status != PaymentStatus.Pending)
+            return Result.Failure($"Payment is already {Status}.");
+
+        Status = PaymentStatus.Failed;
+        return Result.Success();
+    }
+
     public void ClearDomainEvents() => _domainEvents.Clear();
 }
 

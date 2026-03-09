@@ -56,7 +56,16 @@ public class CreatePaymentHandler
         _paymentRepository.Add(payment);
 
         if (command.IdempotencyKey is not null)
-            _idempotencyStore.Set(command.IdempotencyKey, payloadHash, payment.Id);
+        {
+            var winner = _idempotencyStore.SetIfAbsent(command.IdempotencyKey, payloadHash, payment.Id);
+            if (winner.PaymentId != payment.Id)
+            {
+                // Lost the race — another concurrent request registered this key first.
+                if (winner.Hash != payloadHash)
+                    return CreatePaymentResponse.Conflict("Idempotency key already used with a different payload.");
+                return CreatePaymentResponse.Success(_paymentRepository.GetById(winner.PaymentId)!);
+            }
+        }
 
         _logger.LogInformation("payment_created payment_id={PaymentId} amount={Amount} currency={Currency}",
             payment.Id, payment.Amount.Value, payment.Amount.Currency);

@@ -10,6 +10,7 @@ public class InMemoryIdempotencyStore : IIdempotencyStore
     public bool TryGet(string key, out (string Hash, string PaymentId) value)
         => _store.TryGetValue(key, out value);
 
-    public void Set(string key, string hash, string paymentId)
-        => _store[key] = (hash, paymentId);
+    // GetOrAdd is atomic: only one thread will insert; all others receive the existing record.
+    public (string Hash, string PaymentId) SetIfAbsent(string key, string hash, string paymentId)
+        => _store.GetOrAdd(key, (hash, paymentId));
 }

@@ -3,6 +3,7 @@ using MockPaymentsApi.Application.UseCases.CapturePayment;
 using MockPaymentsApi.Application.UseCases.CreatePayment;
 using MockPaymentsApi.Application.UseCases.GetLedger;
 using MockPaymentsApi.Application.UseCases.GetPayment;
+using MockPaymentsApi.Application.UseCases.RejectPayment;
 using MockPaymentsApi.Domain.Repositories;
 using MockPaymentsApi.Infrastructure.Adapters;
 using MockPaymentsApi.Infrastructure.Persistence;
@@ -17,6 +18,7 @@ builder.Services.AddSingleton<ILedgerRepository, InMemoryLedgerRepository>();
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 builder.Services.AddSingleton<CreatePaymentHandler>();
 builder.Services.AddSingleton<CapturePaymentHandler>();
+builder.Services.AddSingleton<RejectPaymentHandler>();
 builder.Services.AddSingleton<GetPaymentHandler>();
 builder.Services.AddSingleton<GetLedgerHandler>();
 

@@ -82,6 +82,8 @@ curl http://localhost:3000/payments/pay_<id>
 
 Possible statuses: `PENDING`, `APPROVED`, `FAILED`
 
+> The `Idempotency-Key` header is **optional**. If omitted, no idempotency check is applied and every request creates a new payment.
+
 ---
 
 ### POST /payments/{payment_id}/capture — Capture a payment
@@ -92,7 +94,18 @@ curl -X POST http://localhost:3000/payments/pay_<id>/capture
 
 - Changes status to `APPROVED`
 - Writes ledger entries (idempotent — will not duplicate)
-- Fires a webhook event to the sink with exponential backoff retry (1s → 3s → 5s, max 3 retries)
+- Fires a `payment.approved` webhook event to the sink with exponential backoff retry (1s → 3s → 5s, max 4 attempts total)
+
+---
+
+### POST /payments/{payment_id}/reject — Reject a payment
+
+```bash
+curl -X POST http://localhost:3000/payments/pay_<id>/reject
+```
+
+- Changes status to `FAILED`
+- Only allowed from `PENDING` state; returns HTTP 422 otherwise
 
 ---
 
@@ -128,11 +141,41 @@ PAYMENT=$(curl -s -X POST http://localhost:3000/payments \
 PAYMENT_ID=$(echo $PAYMENT | python3 -c "import sys,json; print(json.load(sys.stdin)['payment_id'])")
 echo "Created: $PAYMENT_ID"
 
-# 2. Capture it
+# 2. Capture it (status → APPROVED, ledger written, webhook fired)
 curl -s -X POST http://localhost:3000/payments/$PAYMENT_ID/capture | python3 -m json.tool
 
 # 3. Check ledger
 curl -s http://localhost:3000/ledger/$PAYMENT_ID | python3 -m json.tool
+
+# --- Alternatively: reject the payment (status → FAILED) ---
+# curl -s -X POST http://localhost:3000/payments/$PAYMENT_ID/reject | python3 -m json.tool
+```
+
+## Simulating webhook failures
+
+The webhook sink exposes a control endpoint to switch failure modes at runtime — no container restart required.
+
+```bash
+# Force HTTP 500 on all incoming webhooks
+curl -s -X POST http://localhost:4000/control \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "500"}'
+
+# Force timeout (10 s delay)
+curl -s -X POST http://localhost:4000/control \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "timeout"}'
+
+# Restore normal behaviour
+curl -s -X POST http://localhost:4000/control \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "ok"}'
+```
+
+Then trigger a capture to observe the retry logic (1 s → 3 s → 5 s, 4 attempts total) in the API container logs:
+
+```bash
+docker logs mock-payments-api --follow
 ```
 
 ---
@@ -151,21 +194,38 @@ curl -s http://localhost:3000/ledger/$PAYMENT_ID | python3 -m json.tool
 
 ## Architecture
 
+Clean Architecture with DDD building blocks.
+
 ```
 MockPaymentsApi/
-├── Controllers/
-│   ├── PaymentsController.cs   # POST /payments, GET /payments/{id}, POST /payments/{id}/capture
-│   └── LedgerController.cs     # GET /ledger/{id}
-├── Services/
-│   ├── PaymentService.cs       # Business logic, idempotency
-│   ├── LedgerService.cs        # Ledger write with concurrency guard
-│   └── WebhookService.cs       # Fire-and-forget with retry
-├── Models/
-│   ├── Payment.cs
-│   ├── Split.cs
-│   └── LedgerEntry.cs
-├── Store/
-│   └── InMemoryStore.cs        # Thread-safe in-memory storage
+├── API/
+│   ├── Controllers/
+│   │   ├── PaymentsController.cs   # POST /payments, GET /payments/{id},
+│   │   │                           # POST /payments/{id}/capture,
+│   │   │                           # POST /payments/{id}/reject
+│   │   └── LedgerController.cs     # GET /ledger/{id}
+│   └── Requests/
+│       └── CreatePaymentRequest.cs
+├── Application/
+│   ├── Ports/
+│   │   ├── IIdempotencyStore.cs
+│   │   └── IWebhookPort.cs
+│   └── UseCases/
+│       ├── CreatePayment/
+│       ├── CapturePayment/
+│       ├── RejectPayment/
+│       ├── GetPayment/
+│       └── GetLedger/
+├── Domain/
+│   ├── Common/        # Result
+│   ├── Entities/      # Payment, LedgerEntry
+│   ├── Events/        # PaymentCapturedEvent
+│   ├── Repositories/  # IPaymentRepository, ILedgerRepository
+│   └── ValueObjects/  # Money, SplitItem
+├── Infrastructure/
+│   ├── Adapters/      # WebhookAdapter (fire-and-forget + retry)
+│   └── Persistence/   # InMemoryPaymentRepository, InMemoryLedgerRepository,
+│                      # InMemoryIdempotencyStore
 ├── examples/
 │   └── payment-request.json
 ├── Program.cs

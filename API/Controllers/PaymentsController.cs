@@ -3,6 +3,7 @@ using MockPaymentsApi.API.Requests;
 using MockPaymentsApi.Application.UseCases.CapturePayment;
 using MockPaymentsApi.Application.UseCases.CreatePayment;
 using MockPaymentsApi.Application.UseCases.GetPayment;
+using MockPaymentsApi.Application.UseCases.RejectPayment;
 using MockPaymentsApi.Domain.Entities;
 
 namespace MockPaymentsApi.API.Controllers;
@@ -14,15 +15,18 @@ public class PaymentsController : ControllerBase
     private readonly CreatePaymentHandler _createHandler;
     private readonly GetPaymentHandler _getHandler;
     private readonly CapturePaymentHandler _captureHandler;
+    private readonly RejectPaymentHandler _rejectHandler;
 
     public PaymentsController(
         CreatePaymentHandler createHandler,
         GetPaymentHandler getHandler,
-        CapturePaymentHandler captureHandler)
+        CapturePaymentHandler captureHandler,
+        RejectPaymentHandler rejectHandler)
     {
         _createHandler = createHandler;
         _getHandler = getHandler;
         _captureHandler = captureHandler;
+        _rejectHandler = rejectHandler;
     }
 
     // POST /payments
@@ -61,6 +65,18 @@ public class PaymentsController : ControllerBase
     public async Task<IActionResult> Capture(string paymentId)
     {
         var response = await _captureHandler.HandleAsync(new CapturePaymentCommand(paymentId));
+
+        if (response.IsNotFound) return NotFound(new { error = response.Error });
+        if (response.IsUnprocessable) return UnprocessableEntity(new { error = response.Error });
+
+        return Ok(ToDto(response.Payment!));
+    }
+
+    // POST /payments/{payment_id}/reject
+    [HttpPost("{paymentId}/reject")]
+    public IActionResult Reject(string paymentId)
+    {
+        var response = _rejectHandler.Handle(new RejectPaymentCommand(paymentId));
 
         if (response.IsNotFound) return NotFound(new { error = response.Error });
         if (response.IsUnprocessable) return UnprocessableEntity(new { error = response.Error });

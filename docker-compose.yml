@@ -16,22 +16,50 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Minimal webhook sink — logs every POST and returns 200
+  # Webhook sink with failure simulation support.
+  #
+  # Control endpoint (POST http://localhost:4000/control):
+  #   {"mode": "ok"}       — default, returns HTTP 200
+  #   {"mode": "500"}      — simulates server error (HTTP 500)
+  #   {"mode": "timeout"}  — simulates timeout (sleeps 10s before responding)
+  #
+  # Webhook endpoint: POST http://localhost:4000/webhook
   webhook-sink:
     image: python:3.12-slim
     container_name: webhook-sink
     command: >
       python -c "
-      import http.server, json, sys
+      import http.server, json, time, threading
+
+      state = {'mode': 'ok'}
+      lock = threading.Lock()
 
       class Handler(http.server.BaseHTTPRequestHandler):
           def do_POST(self):
               length = int(self.headers.get('Content-Length', 0))
               body = self.rfile.read(length).decode()
-              print(f'[webhook-sink] received: {body}', flush=True)
-              self.send_response(200)
-              self.end_headers()
-              self.wfile.write(b'{\"received\":true}')
+              if self.path == '/control':
+                  data = json.loads(body) if body else {}
+                  with lock:
+                      state['mode'] = data.get('mode', 'ok')
+                  print(f'[webhook-sink] mode set to: {state[\"mode\"]}', flush=True)
+                  self.send_response(200)
+                  self.end_headers()
+                  self.wfile.write(b'{\"ok\":true}')
+                  return
+              with lock:
+                  mode = state['mode']
+              print(f'[webhook-sink] received ({mode}): {body}', flush=True)
+              if mode == 'timeout':
+                  time.sleep(10)
+              if mode == '500':
+                  self.send_response(500)
+                  self.end_headers()
+                  self.wfile.write(b'{\"error\":\"simulated failure\"}')
+              else:
+                  self.send_response(200)
+                  self.end_headers()
+                  self.wfile.write(b'{\"received\":true}')
           def log_message(self, *args):
               pass
 

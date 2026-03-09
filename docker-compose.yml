@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  mock-payments-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mock-payments-api
+    ports:
+      - "3000:3000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - Webhook__Url=http://webhook-sink:4000/webhook
+    depends_on:
+      webhook-sink:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Minimal webhook sink — logs every POST and returns 200
+  webhook-sink:
+    image: python:3.12-slim
+    container_name: webhook-sink
+    command: >
+      python -c "
+      import http.server, json, sys
+
+      class Handler(http.server.BaseHTTPRequestHandler):
+          def do_POST(self):
+              length = int(self.headers.get('Content-Length', 0))
+              body = self.rfile.read(length).decode()
+              print(f'[webhook-sink] received: {body}', flush=True)
+              self.send_response(200)
+              self.end_headers()
+              self.wfile.write(b'{\"received\":true}')
+          def log_message(self, *args):
+              pass
+
+      print('[webhook-sink] listening on :4000', flush=True)
+      http.server.HTTPServer(('0.0.0.0', 4000), Handler).serve_forever()
+      "
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/webhook', data=b'{}')"]
+      interval: 3s
+      timeout: 3s
+      retries: 10

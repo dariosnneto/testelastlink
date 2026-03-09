@@ -1,0 +1,10 @@
+{
+  "amount": 10000,
+  "currency": "BRL",
+  "customer_id": "cus_123",
+  "merchant_id": "merch_456",
+  "split": [
+    { "recipient": "seller_1", "percentage": 80 },
+    { "recipient": "platform", "percentage": 20 }
+  ]
+}

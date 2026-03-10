@@ -1,12 +1,56 @@
 # Quality Strategy — Mock Payments API
 
-> This document covers the risk model, test coverage rationale, incident
-> investigation protocol, quality metrics, and the 30-60-90 day roadmap for
-> the test suite built in Steps 0-8.
+> This document covers the CI/CD pipeline strategy, risk model, test coverage
+> rationale, incident investigation protocol, quality metrics, and the
+> 30-60-90 day roadmap for the test suite built in Steps 0-8.
 
 ---
 
-## 1. Risk Matrix
+## 1. Pipeline CI/CD
+
+### Test distribution by stage
+
+| Stage | Trigger | Projects | Steps covered | Est. time |
+|---|---|---|---|---|
+| **PR Gate** | Pull Request | `api` + `ledger` | 1, 2, 3, 4, 6 | ~30 s |
+| **Full Suite** | Push to `main` / daily cron | all | 1–7 | ~2-3 min |
+
+The split is intentional: **PR Gate covers all P0/P1 financial risks** (creation,
+validation, idempotency, state transitions, ledger consistency) using only fast,
+deterministic tests. Slow tests (concurrency, webhook retry) run post-merge where
+a failure doesn't block a developer's day, but still gates the main branch.
+
+### Fast-feedback strategy
+
+- PR Gate runs in < 45 s — faster than a code review round-trip.
+- Webhook tests (CT53–CT57, ~22 s each) are excluded from PR Gate because they
+  depend on Docker network timing and add variance without improving signal on
+  a new PR.
+- A PR Gate failure blocks merge. Full Suite failure triggers a Slack alert and
+  must be fixed before the next PR is merged.
+
+### Flakiness reduction
+
+| Technique | Applied where |
+|---|---|
+| `uniqueKey()` with `timestamp + random` suffix | All idempotency and creation tests |
+| Each test creates its own payment(s) | All tests — no shared state |
+| `beforeEach` resets webhook mode to `ok` | CT53–CT57 |
+| `test.slow()` triples timeout on CT56 | CT56 only (22 s expected runtime) |
+| No teardown required | Server restarted between CI jobs via `docker compose down` |
+
+### Test data strategy
+
+| Aspect | Approach |
+|---|---|
+| **Setup** | Each test creates its own data via the API: `validPaymentPayload()` + `uniqueKey()` |
+| **Fixtures** | `tests/helpers/payment-helpers.ts` centralises payloads, key generation, and shortcut helpers |
+| **Teardown** | Not required — the mock API is stateless per container; `docker compose down` resets everything |
+| **Seed data** | Not used — every test is self-sufficient and produces only the state it needs |
+
+---
+
+## 2. Risk Matrix
 
 Risks are scored by **Probability × Impact** (1–3 scale each, giving 1–9).
 Coverage indicates which test cases address each risk.
@@ -31,7 +75,7 @@ Coverage indicates which test cases address each risk.
 
 ---
 
-## 2. Test Coverage Map
+## 3. Test Coverage Map
 
 ```
 CT01-CT07   Payment creation happy path + structural idempotency
@@ -55,7 +99,7 @@ CT53-CT57   Webhook resilience (fire-and-forget timing, 500 transparency,
 
 ---
 
-## 3. Technical Decisions and Trade-offs
+## 4. Technical Decisions and Trade-offs
 
 ### Tool choice: Playwright over Supertest / Axios
 
@@ -97,9 +141,15 @@ CT44 covers the hard guarantee: the ledger is written exactly once.
 
 ---
 
-## 4. Incident Investigation Protocol
+## 5. Incident Investigation Protocol — MTTR Reduction
 
-### Scenario: duplicate charges reported in production
+Each scenario follows the same five-step process:
+**triage → reproduce → isolate → regression test → post-mortem.**
+A fix is only complete when the new regression test is green.
+
+---
+
+### Scenario 1: duplicate charges reported in production
 
 **Step 1 — Triage (< 5 min)**
 - Identify affected `payment_id`s from support tickets or payment processor logs.
@@ -159,9 +209,136 @@ Document in `docs/incidents/YYYY-MM-DD-<slug>.md`:
 
 ---
 
-## 5. Quality Metrics
+### Scenario 2: payments captured but missing from the ledger
 
-### Targets
+> "Some payments were charged, but their entries never appeared in the ledger."
+
+#### Root-cause hypotheses
+
+**H1 — Transactional failure during capture**
+`CapturePaymentHandler` updates the payment status to `APPROVED` and then
+calls `TryWriteAsync`. If the ledger write fails (timeout, constraint violation)
+after the status was already mutated, the payment is `APPROVED` with no
+accounting record. There is no atomic transaction spanning both operations.
+
+**H2 — Race condition on concurrent captures**
+Two capture requests arrive near-simultaneously. Both pass the `PENDING` check
+in `Payment.Capture()` before either writes the new status. Both proceed to
+the ledger; the `SemaphoreSlim` ensures only one write lands, but the second
+thread may observe the ledger as already written and silently skip it.
+
+**H3 — Silent failure in async processing**
+If ledger writes were event-driven (message queue), the event could be lost:
+broker restart, missing dead-letter configuration, or a deserialization bug in
+the consumer. The payment is captured; the ledger event is never processed.
+*(Not the current architecture — relevant if the system is migrated to event
+sourcing.)*
+
+**H4 — Timeout + incorrect retry**
+The ledger write times out but was actually committed. The retry finds a
+uniqueness violation, discards it silently, and the original record was never
+durably flushed.
+
+#### Reproduction plan
+
+```bash
+# 1. Start the API
+docker compose up -d --wait
+
+# 2. H1 — Capture and immediately check ledger
+PAYMENT_ID=$(curl -s -X POST http://localhost:3000/payments \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: incident2-001" \
+  -d @examples/payment-request.json | python3 -c "import sys,json; print(json.load(sys.stdin)['payment_id'])")
+
+curl -s -X POST http://localhost:3000/payments/$PAYMENT_ID/capture
+
+curl -s http://localhost:3000/ledger/$PAYMENT_ID
+# Expect: {"payment_id":"...","entries":[...]}
+# If 404 or empty: H1 confirmed
+
+# 3. H2 — Run concurrent capture test
+npx playwright test --project=concurrency tests/concurrency/concurrent-requests.spec.ts
+
+# 4. Check container logs for any ledger errors
+docker logs mock-payments-api | grep -E "ledger|error|warn"
+```
+
+**Isolation decision table:**
+
+| Symptom | Likely hypothesis | Relevant tests |
+|---|---|---|
+| `GET /ledger/{id}` returns 404 after successful capture | H1 | CT45 (planned) |
+| Ledger has correct entries but `amount` mismatch | H4 | CT48 (planned) |
+| `GET /ledger/{id}` entries appear only on second request | H2 | CT42, CT44 |
+| Ledger missing only on high-concurrency runs | H2 | CT44 |
+
+#### Required logs and metrics
+
+The following must be present in structured JSON logs (correlated by
+`payment_id`) to diagnose this incident within 15 minutes:
+
+```
+payment.capture.started        { payment_id, status_before }
+payment.capture.status_updated { payment_id, new_status }
+ledger.write.started           { payment_id, entries_count }
+ledger.write.completed         { payment_id, duration_ms }
+ledger.write.failed            { payment_id, error, stack_trace }
+```
+
+**Alerting metrics:**
+
+| Metric | Type | Alert threshold |
+|---|---|---|
+| `payment_capture_total{status}` | counter | — |
+| `ledger_write_total{status="ok\|failed"}` | counter | P0 if `failed > 0` |
+| `ledger_write_duration_ms` | histogram | P95 > 500 ms → warning |
+| `payment_without_ledger` | gauge | **P0 if > 0** — immediate page |
+
+#### Regression tests to prevent recurrence
+
+| Test | Hypothesis covered |
+|---|---|
+| CT45 — Captured payment has ledger entries | H1 |
+| CT48 — Sum of credits equals debit amount | H1, H4 |
+| CT42 — No 5xx on concurrent captures | H2 |
+| CT44 — Ledger has exactly the right entries after concurrent captures | H2 |
+
+#### Structural improvements
+
+1. **Atomic transaction** — wrap status update + ledger write in a single DB
+   transaction; if the ledger write fails, roll back the status change.
+2. **Outbox pattern** — insert a ledger event into an outbox table within the
+   same transaction as the status update; a separate worker processes it.
+   Re-processing an already-applied event is safe because `TryWriteAsync`
+   is idempotent.
+3. **Idempotent ledger consumer** — use `payment_id` as a deduplication key;
+   reprocessing an event must be a no-op, not an error.
+4. **Reconciliation job** — a cron that compares all `APPROVED` payments
+   against ledger entries; discrepancies trigger automatic reprocessing and
+   a P0 alert.
+5. **Unique constraint on ledger** — `UNIQUE(payment_id, type, account)`
+   as a last-resort guard against duplicates even under retry storms.
+
+---
+
+## 6. Quality Metrics
+
+### Weekly tracking
+
+| Metric | What it measures | Connected to | Target |
+|---|---|---|---|
+| **Escaped bugs to production** | Bugs found by customers or monitoring | Risk (financial / UX) | ≤ 1 / week |
+| **Post-deploy incidents** | P0/P1 incidents in first 24 h after deploy | Velocity (deploy confidence) | 0 per deploy |
+| **Rollback rate** | % of deploys requiring a rollback | Velocity (stability) | < 5% |
+| **P0 flow coverage** | % of P0/P1 risk-matrix scenarios with automated tests | Risk (financial protection) | 100% |
+| **MTTD** | Mean time from bug occurring to detection | Perceived quality | < 5 min |
+| **MTTR** | Mean time from detection to resolution | Perceived quality + velocity | < 30 min (P0) |
+| **Flaky test rate** | % of tests failing without a code change | Velocity (suite confidence) | < 2% |
+| **Deploy frequency** | Production deploys per week | Velocity | ≥ 5 / week |
+| **Test suite runtime** | Total runtime of the full suite | Velocity (feedback loop) | < 5 min |
+
+### Suite-level targets
 
 | Metric | Target | Current | Source |
 |---|---|---|---|
@@ -169,8 +346,16 @@ Document in `docs/incidents/YYYY-MM-DD-<slug>.md`:
 | `pr-gate` duration | < 60 s | ~30 s | GitHub Actions timing |
 | `full-suite` duration | < 5 min | ~2-3 min | GitHub Actions timing |
 | CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping |
-| Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §1 |
+| Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §2 |
 | Flaky test rate (last 30 runs) | < 2% | 0% | GitHub Actions history |
+
+### How each metric drives decisions
+
+- **Escaped bugs ↑** → expand the test suite to uncovered flows; revisit the risk matrix
+- **Post-deploy incidents > 0** → introduce canary deployments or feature flags; add smoke tests
+- **Rollback rate > 5%** → increase integration-test coverage; add pre-deploy quality gates
+- **MTTD high** → invest in observability: 5xx anomaly alerts, payment-without-ledger gauge
+- **MTTR high** → improve runbooks; add structured logs with `payment_id` correlation IDs
 
 ### How to measure flakiness
 
@@ -182,19 +367,19 @@ for i in $(seq 1 5); do npx playwright test --pass-with-no-tests; done
 A test is considered flaky if it fails in ≥ 1 of 5 runs without a code change.
 Tag flaky tests with `test.fixme()` and open a tracking issue immediately.
 
-### Coverage gaps to track
+### Coverage gaps (technical debt)
 
-The following areas have no automated coverage yet and represent technical debt:
+The following areas have no automated coverage yet:
 
-- `GET /ledger/{id}` endpoint (Step 6 — planned)
-- Multi-step integration flows, e.g. create → capture → GET ledger (Step 7)
-- `GET /payments/{id}` 404 for non-existent ID (partially covered by CT37/CT38 implicitly)
-- Negative amount at the `SplitItem.CalculateAmount` boundary (rounding edge cases)
+- `GET /ledger/{id}` endpoint (Step 6 — planned, CT45-CT52)
+- Multi-step integration flows: create → capture → GET ledger (Step 7)
+- `GET /payments/{id}` 404 for non-existent ID (partially covered implicitly by CT37/CT38)
+- `SplitItem.CalculateAmount` rounding edge cases (e.g. 3-way split with non-divisible amounts)
 - Stress / load testing (throughput, P99 latency) — out of scope for Playwright; use k6
 
 ---
 
-## 6. 30-60-90 Day Roadmap
+## 7. 30-60-90 Day Roadmap
 
 ### Month 1 (Days 1-30) — Foundation complete
 

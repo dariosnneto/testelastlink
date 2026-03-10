@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { validPaymentPayload, uniqueKey } from '../helpers/payment-helpers';
 
 // ---------------------------------------------------------------------------
-// CT01 — Happy path: valid payload returns 201 with all expected fields testestestes
+// CT01 — Happy path: valid payload returns 201 with all expected fields
 // ---------------------------------------------------------------------------
 test('CT01 - valid payment returns 201 with correct response shape', async ({ request }) => {
   // Arrange

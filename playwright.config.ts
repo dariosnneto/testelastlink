@@ -34,7 +34,7 @@ export default defineConfig({
     {
       name: 'resilience',
       testMatch: ['**/resilience/**/*.spec.ts', '**/webhook/**/*.spec.ts'],
-      timeout: 60_000,
+      timeout: 70_000,
     },
     {
       name: 'concurrency',

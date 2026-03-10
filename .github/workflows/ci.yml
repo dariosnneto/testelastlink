@@ -17,6 +17,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # ─── Reusable steps (composite action inline via anchors) ─────────────────────
 # GitHub Actions doesn't support YAML anchors, so shared logic is duplicated
 # intentionally across jobs to keep the file self-contained and readable.

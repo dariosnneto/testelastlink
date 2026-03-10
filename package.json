@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "playwright test --pass-with-no-tests",
+    "test": "playwright test ",
     "test:api": "playwright test --project=api --pass-with-no-tests",
     "test:ledger": "playwright test --project=ledger --pass-with-no-tests",
     "test:integration": "playwright test --project=integration --pass-with-no-tests",
@@ -14,4 +14,5 @@
     "@playwright/test": "^1.49.0",
     "@types/node": "^22.0.0"
   }
+  
 }

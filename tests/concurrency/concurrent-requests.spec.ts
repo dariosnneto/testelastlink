@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type PlaywrightWorkerArgs } from '@playwright/test';
 import { validPaymentPayload, uniqueKey } from '../helpers/payment-helpers';
 
 const BASE_URL = 'http://localhost:3000';
@@ -13,7 +13,7 @@ type Result<T = unknown> = { status: number; body: T };
  * is torn down before the response body is consumed.
  */
 async function firePost<T = unknown>(
-  playwright: Parameters<Parameters<typeof test>[1]>[0]['playwright'],
+  playwright: PlaywrightWorkerArgs['playwright'],
   path: string,
   options: { headers?: Record<string, string>; data?: unknown } = {},
 ): Promise<Result<T>> {

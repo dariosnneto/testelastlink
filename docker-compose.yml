@@ -1,4 +1,4 @@
-version: "3.9"
+#version: "3.9"
 
 services:
   mock-payments-api:
@@ -27,7 +27,7 @@ services:
   webhook-sink:
     image: python:3.12-slim
     container_name: webhook-sink
-    command: >
+    command: |
       python -c "
       import http.server, json, time, threading
 

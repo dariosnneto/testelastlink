@@ -1,0 +1,16 @@
+{
+  "name": "mock-payments-api-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test --pass-with-no-tests",
+    "test:api": "playwright test --project=api --pass-with-no-tests",
+    "test:integration": "playwright test --project=integration --pass-with-no-tests",
+    "test:resilience": "playwright test --project=resilience --pass-with-no-tests",
+    "test:concurrency": "playwright test --project=concurrency --pass-with-no-tests"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0"
+  }
+}

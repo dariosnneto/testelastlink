@@ -1,0 +1,151 @@
+name: CI
+
+# ─── Triggers ────────────────────────────────────────────────────────────────
+# pr-gate  → pull_request only  (fast, blocks merge)
+# full-suite → push to main + daily cron  (comprehensive, post-merge)
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC every day
+
+# Cancel in-progress runs for the same branch/PR to save minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─── Reusable steps (composite action inline via anchors) ─────────────────────
+# GitHub Actions doesn't support YAML anchors, so shared logic is duplicated
+# intentionally across jobs to keep the file self-contained and readable.
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 1 — pr-gate
+  # Runs on every pull request.
+  # Tests: api + ledger (deterministic, fast, ~30 s).
+  # Blocks merge on failure.
+  # ═══════════════════════════════════════════════════════════════════════════
+  pr-gate:
+    name: PR Gate (api + ledger)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # No browser installation needed — all tests use the `request` fixture (API only).
+
+      - name: Start services (Docker Compose)
+        run: docker compose up -d --wait
+        # --wait blocks until all services with healthchecks are healthy.
+        # The webhook-sink healthcheck must pass before the API container starts.
+
+      - name: Wait for API to be ready
+        # The API container has no Docker healthcheck, so we poll until it responds.
+        # GET /payments/nonexistent returns 404 once Kestrel is accepting requests.
+        run: |
+          echo "Waiting for API on http://localhost:3000 …"
+          timeout 30 bash -c \
+            'until curl -s -o /dev/null http://localhost:3000/payments/warmup; do sleep 1; done'
+          echo "API is ready."
+
+      - name: Run API tests
+        run: npx playwright test --project=api
+
+      - name: Run Ledger tests
+        run: npx playwright test --project=ledger --pass-with-no-tests
+        # --pass-with-no-tests allows the job to succeed before Step 6 adds ledger specs.
+
+      - name: Upload test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr-gate
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Stop services
+        if: always()
+        run: docker compose down
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 2 — full-suite
+  # Runs on push to main and on the daily cron schedule.
+  # Tests: all projects (api, ledger, integration, concurrency, resilience/webhook).
+  # Estimated runtime: ~2-3 min (dominated by webhook retry tests, ~22 s).
+  # ═══════════════════════════════════════════════════════════════════════════
+  full-suite:
+    name: Full Suite (all projects)
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start services (Docker Compose)
+        run: docker compose up -d --wait
+
+      - name: Wait for API to be ready
+        run: |
+          echo "Waiting for API on http://localhost:3000 …"
+          timeout 30 bash -c \
+            'until curl -s -o /dev/null http://localhost:3000/payments/warmup; do sleep 1; done'
+          echo "API is ready."
+
+      - name: Run all tests
+        run: npx playwright test --pass-with-no-tests
+        # CI=true (set automatically by GitHub Actions) enables:
+        #   - `github` reporter (annotations in PR checks)
+        #   - retries: 1 (one retry on flaky tests)
+        #   - forbidOnly: true (fails if test.only was left in)
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-full-suite
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Capture Docker service logs on failure
+        if: failure()
+        run: |
+          docker compose logs mock-payments-api > docker-api.log 2>&1
+          docker compose logs webhook-sink > docker-webhook-sink.log 2>&1
+
+      - name: Upload Docker logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-logs-full-suite
+          path: |
+            docker-api.log
+            docker-webhook-sink.log
+          retention-days: 14
+
+      - name: Stop services
+        if: always()
+        run: docker compose down

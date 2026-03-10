@@ -1,4 +1,10 @@
-﻿/.idea/
+/.idea/
 /obj/
 /bin/
 /.claude/
+
+# Node / Playwright
+node_modules/
+playwright-report/
+test-results/
+dist/

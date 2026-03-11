@@ -127,13 +127,14 @@ jobs:
         #   - retries: 1 (one retry on flaky tests)
         #   - forbidOnly: true (fails if test.only was left in)
 
-      - name: Upload Full Suite Test report 
+      - name: Upload Full Suite Test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-full-suite
           path: playwright-report/
           retention-days: 14
+          if-no-files-found: warn
 
       - name: Capture Docker service logs on failure
         if: failure()

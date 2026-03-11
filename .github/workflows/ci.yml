@@ -108,7 +108,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Start services (Docker Compose)
         run: docker compose up -d --wait
@@ -121,13 +121,13 @@ jobs:
           echo "API is ready."
 
       - name: Run all tests
-        run: npx playwright test --pass-with-no-tests
+        run: npx playwright test 
         # CI=true (set automatically by GitHub Actions) enables:
         #   - `github` reporter (annotations in PR checks)
         #   - retries: 1 (one retry on flaky tests)
         #   - forbidOnly: true (fails if test.only was left in)
 
-      - name: Upload Playwright report 
+      - name: Upload Full Suite Test report 
         if: always()
         uses: actions/upload-artifact@v4
         with:

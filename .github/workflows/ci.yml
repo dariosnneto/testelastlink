@@ -17,9 +17,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-
 # ─── Reusable steps (composite action inline via anchors) ─────────────────────
 # GitHub Actions doesn't support YAML anchors, so shared logic is duplicated
 # intentionally across jobs to keep the file self-contained and readable.
@@ -39,10 +36,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -70,12 +67,12 @@ jobs:
         run: npx playwright test --project=api
 
       - name: Run Ledger tests
-        run: npx playwright test --project=ledger --pass-with-no-tests
-        # --pass-with-no-tests allows the job to succeed before Step 6 adds ledger specs.
+        run: npx playwright test --project=ledger 
+      
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-pr-gate
           path: playwright-report/
@@ -99,10 +96,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -129,7 +126,7 @@ jobs:
 
       - name: Upload Full Suite Test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-full-suite
           path: playwright-report/
@@ -144,7 +141,7 @@ jobs:
 
       - name: Upload Docker logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docker-logs-full-suite
           path: |

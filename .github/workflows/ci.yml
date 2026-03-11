@@ -127,8 +127,8 @@ jobs:
         #   - retries: 1 (one retry on flaky tests)
         #   - forbidOnly: true (fails if test.only was left in)
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: Upload Playwright report 
+        if: always()
         uses: actions/upload-artifact@v5
         with:
           name: playwright-report-full-suite

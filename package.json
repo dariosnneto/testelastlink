@@ -6,7 +6,6 @@
     "test": "playwright test ",
     "test:api": "playwright test --project=api ",
     "test:ledger": "playwright test --project=ledger ",
-    "test:integration": "playwright test --project=integration ",
     "test:resilience": "playwright test --project=resilience ",
     "test:concurrency": "playwright test --project=concurrency "
   },

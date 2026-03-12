@@ -6,7 +6,12 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  workers: process.env.CI ? 2 : undefined,
+  reporter: process.env.CI
+    ? process.env.SHARDED
+      ? [['blob'], ['github']]
+      : [['github'], ['html', { open: 'never' }]]
+    : 'list',
 
   use: {
     baseURL: 'http://localhost:3000',

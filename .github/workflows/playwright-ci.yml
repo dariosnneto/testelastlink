@@ -1,4 +1,4 @@
-name: CI
+name: Playwright Tests
 
 # ─── Triggers ────────────────────────────────────────────────────────────────
 # pr-gate  → pull_request only  (fast, blocks merge)
@@ -89,10 +89,15 @@ jobs:
   # Estimated runtime: ~2-3 min (dominated by webhook retry tests, ~22 s).
   # ═══════════════════════════════════════════════════════════════════════════
   full-suite:
-    name: Full Suite (all projects)
+    name: Full Suite (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     if: github.event_name == 'push' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2, 3]
+        shardTotal: [3]
 
     steps:
       - name: Checkout
@@ -118,20 +123,21 @@ jobs:
           echo "API is ready."
 
       - name: Run all tests
-        run: npx playwright test 
+        run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        env:
+          SHARDED: true
         # CI=true (set automatically by GitHub Actions) enables:
         #   - `github` reporter (annotations in PR checks)
         #   - retries: 1 (one retry on flaky tests)
         #   - forbidOnly: true (fails if test.only was left in)
 
-      - name: Upload Full Suite Test report
+      - name: Upload blob report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report-full-suite
-          path: playwright-report/
-          retention-days: 14
-          if-no-files-found: warn
+          name: blob-report-${{ matrix.shardIndex }}
+          path: blob-report/
+          retention-days: 1
 
       - name: Capture Docker service logs on failure
         if: failure()
@@ -143,7 +149,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: docker-logs-full-suite
+          name: docker-logs-full-suite-${{ matrix.shardIndex }}
           path: |
             docker-api.log
             docker-webhook-sink.log
@@ -152,3 +158,44 @@ jobs:
       - name: Stop services
         if: always()
         run: docker compose down
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # JOB 3 — merge-reports
+  # Merges blob reports from all full-suite shards into a single HTML report.
+  # ═══════════════════════════════════════════════════════════════════════════
+  merge-reports:
+    name: Merge Full Suite Reports
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'schedule') }}
+    needs: [full-suite]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Merge into HTML report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload merged HTML report
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-full-suite
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: warn

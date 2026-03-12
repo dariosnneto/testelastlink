@@ -196,7 +196,7 @@ Two GitHub Actions jobs defined in [`.github/workflows/ci.yml`](.github/workflow
 | Job | Trigger | Projects | Tests | Est. time |
 |---|---|---|:---:|---|
 | `pr-gate` | Every pull request | `api` + `ledger` | 53 | ~10 s |
-| `full-suite` | Push to `main` + daily cron (06:00 UTC) | All 4 projects | 62 | ~30 s |
+| `full-suite` | Push to `main` + daily cron (06:00 UTC-3) | All 4 projects | 62 | ~30 s |
 
 ### Pipeline strategy
 

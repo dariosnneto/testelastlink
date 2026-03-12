@@ -210,7 +210,7 @@ Two GitHub Actions jobs defined in [`.github/workflows/ci.yml`](.github/workflow
 | Artifact | Uploaded when | Retention |
 |---|---|---|
 | `playwright-report-pr-gate` | Always | 7 days |
-| `playwright-report-full-suite` | On failure | 14 days |
+| `playwright-report-full-suite` | Always | 14 days |
 | `docker-logs-full-suite` | On failure | 14 days |
 
 ---

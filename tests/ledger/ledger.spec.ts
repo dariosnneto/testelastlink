@@ -1,24 +1,9 @@
 import { test, expect } from '@playwright/test';
 import {
-  validPaymentPayload,
-  uniqueKey,
   createAndCapture,
   createAndReject,
+  createPending,
 } from '../helpers/payment-helpers';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Create a PENDING payment (no capture/reject). Returns the payment body. */
-async function createPending(request: Parameters<typeof createAndCapture>[0]) {
-  const res = await request.post('/payments', {
-    headers: { 'Idempotency-Key': uniqueKey('ledger') },
-    data: validPaymentPayload(),
-  });
-  expect(res.status()).toBe(201);
-  return res.json() as Promise<{ payment_id: string }>;
-}
 
 // ---------------------------------------------------------------------------
 // CT45–CT52 — Ledger endpoint: GET /ledger/{payment_id}

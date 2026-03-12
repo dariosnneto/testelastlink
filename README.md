@@ -60,7 +60,7 @@ mock-payments-api/
 │   │   ├── payment-idempotency.spec.ts # CT25–CT30
 │   │   └── payment-state-transitions.spec.ts  # CT31–CT40
 │   ├── ledger/                         # Project: ledger (10 s timeout)
-│   ├── integration/                    # Project: integration (20 s timeout)
+│   │   └── ledger.spec.ts              # CT45–CT52
 │   ├── concurrency/                    # Project: concurrency (30 s timeout)
 │   │   └── concurrent-requests.spec.ts # CT41–CT44
 │   └── webhook/                        # Project: resilience (70 s timeout)
@@ -89,6 +89,7 @@ mock-payments-api/
 | CT25–CT30 | Idempotency deep-dive — triple replay, body comparison, case-sensitivity, conflict preservation | 6 |
 | CT31–CT40 | State machine — all 6 transitions, both 404 paths, error contract, read-after-write | 10 |
 | CT41–CT44 | Concurrency — same-key race, concurrent capture, keyless creates, ledger mutex | 4 |
+| CT45–CT52 | Ledger consistency — response shape, entry count, debit/credit amounts, balance, 404 paths | 8 |
 | CT53–CT57 | Webhook resilience — fire-and-forget timing, 500 transparency, retry exhaustion, reject no-webhook | 5 |
 
 ### Risk matrix coverage (top risks)

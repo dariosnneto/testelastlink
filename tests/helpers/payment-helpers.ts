@@ -54,6 +54,14 @@ export async function createAndCapture(request: APIRequestContext, overrides: Pa
   return { createRes, captureRes, payment: await captureRes.json() };
 }
 
+export async function createPending(request: APIRequestContext, overrides: Partial<PaymentPayload> = {}) {
+  const res = await request.post('/payments', {
+    headers: { 'Idempotency-Key': uniqueKey('ledger') },
+    data: validPaymentPayload(overrides),
+  });
+  return res.json() as Promise<{ payment_id: string }>;
+}
+
 export async function createAndReject(request: APIRequestContext, overrides: Partial<PaymentPayload> = {}) {
   const createRes = await request.post('/payments', {
     headers: { 'Idempotency-Key': uniqueKey() },

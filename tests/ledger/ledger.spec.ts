@@ -3,6 +3,7 @@ import {
   createAndCapture,
   createAndReject,
   createPending,
+  type LedgerEntry,
 } from '../helpers/payment-helpers';
 
 // ---------------------------------------------------------------------------
@@ -66,45 +67,48 @@ test.describe('Ledger endpoint', () => {
 
       // Act
       const res = await request.get(`/ledger/${payment.payment_id}`);
-      const { entries } = await res.json();
+      const { entries } = (await res.json()) as { entries: LedgerEntry[] };
 
       // Assert
-      const debit = entries.find((e: { type: string }) => e.type === 'debit');
+      const debit = entries.find((e) => e.type === 'debit');
       expect(debit).toBeDefined();
-      expect(debit.account).toBe('customer');
-      expect(debit.amount).toBe(amount);
+      expect(debit!.account).toBe('customer');
+      expect(debit!.amount).toBe(amount);
     },
   );
 
   // ─── CT48 ──────────────────────────────────────────────────────────────
-  // Credit entries: type="credit", accounts match split recipients,
-  // amounts = Math.round(total * percentage / 100).
+  // Credit entries: each recipient receives the exact amount derived from the
+  // business rule (percentage of total), verified against hard-coded expected
+  // values — not recomputed using the same formula as the server.
   test(
-    'CT48 — credit entries match recipients and computed amounts',
+    'CT48 — credit entries match recipients and correct amounts',
     { tag: ['@ledger', '@critical'] },
     async ({ request }) => {
-      // Arrange
-      const amount = 10000;
-      const split = [
-        { recipient: 'seller_1', percentage: 80 }, // 8000
-        { recipient: 'platform', percentage: 20 },  // 2000
-      ];
-      const { payment } = await createAndCapture(request, { amount, split });
+      // Arrange — seller_1 at 80% of 10000 = 8000; platform at 20% = 2000
+      const { payment } = await createAndCapture(request, {
+        amount: 10000,
+        split: [
+          { recipient: 'seller_1', percentage: 80 },
+          { recipient: 'platform', percentage: 20 },
+        ],
+      });
 
       // Act
       const res = await request.get(`/ledger/${payment.payment_id}`);
-      const { entries } = await res.json();
+      const { entries } = (await res.json()) as { entries: LedgerEntry[] };
 
-      // Assert
-      const credits = entries.filter((e: { type: string }) => e.type === 'credit');
-      expect(credits).toHaveLength(split.length);
+      // Assert — two credit entries, amounts are the business-defined values
+      const credits = entries.filter((e) => e.type === 'credit');
+      expect(credits).toHaveLength(2);
 
-      for (const item of split) {
-        const expectedAmount = Math.round((amount * item.percentage) / 100);
-        const credit = credits.find((e: { account: string }) => e.account === item.recipient);
-        expect(credit, `credit for ${item.recipient} should exist`).toBeDefined();
-        expect(credit.amount).toBe(expectedAmount);
-      }
+      const seller = credits.find((e) => e.account === 'seller_1');
+      expect(seller).toBeDefined();
+      expect(seller!.amount).toBe(8000); // 80% of 10000
+
+      const platform = credits.find((e) => e.account === 'platform');
+      expect(platform).toBeDefined();
+      expect(platform!.amount).toBe(2000); // 20% of 10000
     },
   );
 
@@ -119,14 +123,15 @@ test.describe('Ledger endpoint', () => {
 
       // Act
       const res = await request.get(`/ledger/${payment.payment_id}`);
-      const { entries } = await res.json();
+      const { entries } = (await res.json()) as { entries: LedgerEntry[] };
 
       // Assert
-      const debit       = entries.find((e: { type: string }) => e.type === 'debit');
-      const credits     = entries.filter((e: { type: string }) => e.type === 'credit');
-      const creditTotal = credits.reduce((sum: number, e: { amount: number }) => sum + e.amount, 0);
+      const debit       = entries.find((e) => e.type === 'debit');
+      const credits     = entries.filter((e) => e.type === 'credit');
+      const creditTotal = credits.reduce((sum, e) => sum + e.amount, 0);
 
-      expect(creditTotal).toBe(debit.amount);
+      expect(debit).toBeDefined();
+      expect(creditTotal).toBe(debit!.amount);
     },
   );
 

@@ -28,6 +28,12 @@ export interface PaymentResponse {
   created_at: string;
 }
 
+export interface LedgerEntry {
+  type: 'debit' | 'credit';
+  account: string;
+  amount: number;
+}
+
 export function validPaymentPayload(overrides: Partial<PaymentPayload> = {}): PaymentPayload {
   return {
     amount: 10000,
@@ -59,9 +65,11 @@ export async function createAndCapture(request: APIRequestContext, overrides: Pa
     headers: { 'Idempotency-Key': uniqueKey() },
     data: validPaymentPayload(overrides),
   });
+  expect(createRes.status()).toBe(201); // fail-fast: surface creation errors immediately
 
   const payment = await createRes.json();
   const captureRes = await request.post(`/payments/${payment.payment_id}/capture`);
+  expect(captureRes.status()).toBe(200); // fail-fast: surface capture errors immediately
   return { createRes, captureRes, payment: (await captureRes.json()) as PaymentResponse };
 }
 
@@ -82,9 +90,11 @@ export async function createAndReject(request: APIRequestContext, overrides: Par
     headers: { 'Idempotency-Key': uniqueKey() },
     data: validPaymentPayload(overrides),
   });
+  expect(createRes.status()).toBe(201); // fail-fast: surface creation errors immediately
 
   const payment = await createRes.json();
   const rejectRes = await request.post(`/payments/${payment.payment_id}/reject`);
+  expect(rejectRes.status()).toBe(200); // fail-fast: surface rejection errors immediately
   return { createRes, rejectRes, payment: (await rejectRes.json()) as PaymentResponse };
 }
 

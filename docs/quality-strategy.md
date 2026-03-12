@@ -36,16 +36,18 @@ a failure doesn't block a developer's day, but still gates the main branch.
 |---|---|
 | `uniqueKey()` with `timestamp + random` suffix | All idempotency and creation tests |
 | Each test creates its own payment(s) | All tests — no shared state |
-| `beforeEach` resets webhook mode to `ok` | CT53–CT57 |
-| `test.slow()` triples timeout on CT56 | CT56 only (22 s expected runtime) |
+| `beforeEach` + `afterEach` reset webhook mode to `ok` | CT53–CT57 |
+| `test.slow()` triples timeout on CT56 | CT56 only (~12 s expected runtime) |
 | No teardown required | Server restarted between CI jobs via `docker compose down` |
+| `pollUntil()` helper preferred over fixed `sleep()` | Any test with an observable condition |
+| `sleep()` used only with explicit comment | CT56 (no observable signal for retry exhaustion) |
 
 ### Test data strategy
 
 | Aspect | Approach |
 |---|---|
 | **Setup** | Each test creates its own data via the API: `validPaymentPayload()` + `uniqueKey()` |
-| **Fixtures** | `tests/helpers/payment-helpers.ts` centralises payloads, key generation, and shortcut helpers |
+| **Fixtures** | `tests/helpers/payment-helpers.ts` centralises payloads, key generation, shortcut helpers, and shared interfaces |
 | **Teardown** | Not required — the mock API is stateless per container; `docker compose down` resets everything |
 | **Seed data** | Not used — every test is self-sufficient and produces only the state it needs |
 
@@ -58,45 +60,59 @@ Coverage indicates which test cases address each risk.
 
 | # | Risk | Probability | Impact | Score | Mitigation / Coverage |
 |---|---|:---:|:---:|:---:|---|
-| R01 | Duplicate payment created due to missing idempotency key | 3 | 3 | **9** | CT05, CT25-CT30 |
+| R01 | Duplicate payment created due to missing idempotency key | 3 | 3 | **9** | CT05, CT25–CT30, CT63 |
 | R02 | Idempotency key reused with different payload → silent data corruption | 2 | 3 | **6** | CT06, CT28, CT30 |
 | R03 | Payment captured twice → double ledger entry / double charge | 3 | 3 | **9** | CT33, CT42, CT44 |
 | R04 | Webhook failure causes capture to fail / roll back | 2 | 3 | **6** | CT54, CT55 |
 | R05 | Webhook retry loop crashes the API after max retries | 1 | 3 | **3** | CT56 |
-| R06 | Invalid amount or currency accepted → financial calculation error | 3 | 3 | **9** | CT02, CT08-CT12 |
-| R07 | Split percentages > or < 100 accepted → ledger imbalance | 3 | 3 | **9** | CT04, CT13-CT16, CT22 |
-| R08 | Terminal state (APPROVED/FAILED) transition allowed → invalid state | 2 | 3 | **6** | CT33-CT36, CT39 |
+| R06 | Invalid amount or currency accepted → financial calculation error | 3 | 3 | **9** | CT02, CT08–CT12, CT60, CT61 |
+| R07 | Split percentages > or < 100 accepted → ledger imbalance | 3 | 3 | **9** | CT04, CT13–CT16, CT22 |
+| R08 | Terminal state (APPROVED/FAILED) transition allowed → invalid state | 2 | 3 | **6** | CT33–CT36 |
 | R09 | Rejected payment fires a webhook | 1 | 2 | **2** | CT57 |
 | R10 | Race condition on concurrent creates produces duplicate payments | 2 | 2 | **4** | CT41, CT43 |
 | R11 | Race condition on concurrent captures produces duplicate ledger rows | 2 | 3 | **6** | CT42, CT44 |
 | R12 | GET /payments returns stale status after state transition | 1 | 2 | **2** | CT40 |
-| R13 | Non-existent payment_id returns 200 instead of 404 | 1 | 2 | **2** | CT37, CT38 |
+| R13 | Non-existent payment_id returns 200 instead of 404 | 1 | 2 | **2** | CT37, CT38, CT62 |
 | R14 | Idempotency key lookup is case-insensitive (unintended deduplication) | 1 | 2 | **2** | CT29 |
-| R15 | `currency` field accepts arbitrary strings after server-side normalisation | 2 | 2 | **4** | CT10-CT12 |
+| R15 | `currency` field accepts arbitrary strings after server-side normalisation | 2 | 2 | **4** | CT10–CT12, CT58 |
+| R16 | Idempotency replay returns stale status after a state change | 1 | 2 | **2** | CT63 |
 
 ---
 
 ## 3. Test Coverage Map
 
 ```
-CT01-CT07   Payment creation happy path + structural idempotency
-CT08-CT24   Input validation (amount, currency, split — 17 edge cases)
-CT25-CT30   Idempotency deep-dive (triple replay, full body comparison,
-             case sensitivity, hash coverage, conflict state preservation)
-CT31-CT40   State machine (all 6 transitions, both 404 paths, error message
-             contract, read-after-write consistency)
-CT41-CT44   Concurrency (same-key race, concurrent capture, keyless creates,
-             ledger mutex verification)
-CT53-CT57   Webhook resilience (fire-and-forget timing, 500 transparency,
-             timeout non-blocking, retry exhaustion, reject no-webhook)
+CT01–CT07    Payment creation happy path + structural idempotency
+CT08–CT24    Input validation — amount, currency, split (17 edge cases)
+CT25–CT30    Idempotency deep-dive — triple replay, full body comparison,
+              case sensitivity, hash coverage, conflict state preservation
+CT31–CT38    State machine — all 4 valid+invalid transitions, both 404 paths,
+              error message contract (CT33–CT36 parametrised)
+CT40         Read-after-write consistency (GET after capture)
+CT41–CT44    Concurrency — same-key race, concurrent capture, keyless creates,
+              ledger mutex verification
+CT45–CT52    Ledger endpoint — happy path, entry count, debit/credit amounts,
+              accounting balance, 404 paths
+CT53–CT57    Webhook resilience — fire-and-forget timing, 500 transparency,
+              timeout non-blocking, retry exhaustion, reject no-webhook
+CT58–CT59    Boundary / contract — currency normalisation, Content-Type header
+CT60–CT61    Amount boundaries — minimum valid (1), maximum safe integer
+CT62         GET /payments/{id} 404 for non-existent payment
+CT63         Idempotency replay returns live status after capture
 ```
 
-### Gap: steps not yet implemented
+> **CT39 removed:** was 100% redundant with CT33–CT36 and violated the one-Act-per-test rule.
+> All four invalid transition cases and their error messages are covered by the parametrised CT33–CT36 loop.
 
-| Step | Area | Missing CTs |
+### Coverage by API endpoint
+
+| Endpoint | Method | Covered by |
 |---|---|---|
-| Step 6 | Ledger endpoint (GET /ledger/{id}) | CT45-CT52 (planned) |
-| Step 7 | Integration flows (create→capture→GET) | full-flow CTs (planned) |
+| `/payments` | POST | CT01–CT07, CT08–CT24, CT25–CT30, CT41, CT43, CT58–CT59 |
+| `/payments/{id}` | GET | CT40, CT62 |
+| `/payments/{id}/capture` | POST | CT31, CT33–CT34, CT36–CT37, CT42, CT53–CT56 |
+| `/payments/{id}/reject` | POST | CT32, CT34–CT35, CT38, CT57 |
+| `/ledger/{id}` | GET | CT44–CT52 |
 
 ---
 
@@ -139,6 +155,13 @@ a known implementation detail. CT42 does **not** assert "exactly one 200"
 because that would be a flaky test; instead it asserts the invariant that
 **always** holds: no 5xx, all responses are 200 or 422, at least one 200.
 CT44 covers the hard guarantee: the ledger is written exactly once.
+
+### Hard-coded expected values in ledger tests (CT48)
+
+CT48 asserts `seller_1 → 8000` and `platform → 2000` as literals, not as
+`Math.round((amount * percentage) / 100)`. If the server's formula has a bug,
+recomputing the same formula in the test would mask it. Hard-coded values derived
+from the business rule ("80% of 10000 = 8000") are the correct approach.
 
 ---
 
@@ -269,8 +292,8 @@ docker logs mock-payments-api | grep -E "ledger|error|warn"
 
 | Symptom | Likely hypothesis | Relevant tests |
 |---|---|---|
-| `GET /ledger/{id}` returns 404 after successful capture | H1 | CT45 (planned) |
-| Ledger has correct entries but `amount` mismatch | H4 | CT48 (planned) |
+| `GET /ledger/{id}` returns 404 after successful capture | H1 | CT45 |
+| Ledger has correct entries but `amount` mismatch | H4 | CT48 |
 | `GET /ledger/{id}` entries appear only on second request | H2 | CT42, CT44 |
 | Ledger missing only on high-concurrency runs | H2 | CT44 |
 
@@ -301,9 +324,10 @@ ledger.write.failed            { payment_id, error, stack_trace }
 | Test | Hypothesis covered |
 |---|---|
 | CT45 — Captured payment has ledger entries | H1 |
-| CT48 — Sum of credits equals debit amount | H1, H4 |
+| CT48 — Credit amounts match business-defined values | H1, H4 |
+| CT49 — Sum of credits equals debit amount | H1 |
 | CT42 — No 5xx on concurrent captures | H2 |
-| CT44 — Ledger has exactly the right entries after concurrent captures | H2 |
+| CT44 — Ledger has exactly 3 entries after concurrent captures | H2 |
 
 #### Structural improvements
 
@@ -345,10 +369,11 @@ ledger.write.failed            { payment_id, error, stack_trace }
 |---|---|---|---|
 | Test suite pass rate (main branch) | 100% | 100% | GitHub Actions `full-suite` |
 | `pr-gate` duration | < 60 s | ~10 s | Local timing (16 workers, `fullyParallel: true`) |
-| `full-suite` duration | < 5 min | ~15 s | Local timing (16 workers, `fullyParallel: true`) / ~30 s CI (3 shards × 2 workers) |
-| CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping |
+| `full-suite` duration | < 5 min | ~15 s | Local timing / ~30 s CI (3 shards × 2 workers) |
+| CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping (§3) |
 | Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §2 |
 | Flaky test rate (last 30 runs) | < 2% | 0% | GitHub Actions history |
+| Total test cases | — | **62** | 7 spec files |
 
 ### How each metric drives decisions
 
@@ -372,40 +397,39 @@ Tag flaky tests with `test.fixme()` and open a tracking issue immediately.
 
 The following areas have no automated coverage yet:
 
-- `GET /ledger/{id}` endpoint (Step 6 — planned, CT45-CT52)
-- Multi-step integration flows: create → capture → GET ledger (Step 7)
-- `GET /payments/{id}` 404 for non-existent ID (partially covered implicitly by CT37/CT38)
+- Multi-step integration flows: create → capture → GET payment → GET ledger (end-to-end chain)
 - `SplitItem.CalculateAmount` rounding edge cases (e.g. 3-way split with non-divisible amounts)
 - Stress / load testing (throughput, P99 latency) — out of scope for Playwright; use k6
+- Security surface: fuzz amount field with floats/strings, `Idempotency-Key` with special characters, CORS/rate-limiting headers
 
 ---
 
 ## 7. 30-60-90 Day Roadmap
 
-### Month 1 (Days 1-30) — Foundation complete
+### Month 1 (Days 1-30) — Foundation complete ✅
 
-**Done (Steps 0-8):**
-- [x] Playwright setup with TypeScript, 5 projects, CI pipeline
-- [x] Payment creation tests (CT01-CT07)
-- [x] Validation tests (CT08-CT24)
-- [x] Idempotency tests (CT25-CT30)
-- [x] State transition tests (CT31-CT40)
-- [x] Concurrency tests (CT41-CT44)
-- [x] Webhook resilience tests (CT53-CT57)
-- [x] GitHub Actions: `pr-gate` + `full-suite`
+**Done (Steps 0-8 + test suite review):**
+- [x] Playwright setup with TypeScript, 4 projects, CI pipeline
+- [x] Payment creation tests (CT01–CT07, CT58–CT59)
+- [x] Validation tests (CT08–CT24, CT60–CT61)
+- [x] Idempotency tests (CT25–CT30, CT63)
+- [x] State transition tests (CT31–CT38, CT40, CT62) — CT39 removed (redundant)
+- [x] Concurrency tests (CT41–CT44)
+- [x] Ledger endpoint tests (CT45–CT52)
+- [x] Webhook resilience tests (CT53–CT57)
+- [x] GitHub Actions: `pr-gate` + `full-suite` with sharding
+- [x] Shared type interfaces (`PaymentResponse`, `LedgerEntry`, `WebhookMode`)
+- [x] `pollUntil` helper; `sleep` scoped to CT56 only
+- [x] AGENTS guide compliance review — all 21 violations resolved
 - [x] Quality strategy documentation
 
-**Targets:**
-- All `pr-gate` tests passing on every PR
-- Zero flaky tests on main branch
-- Mean `pr-gate` duration < 45 s
+**Targets met:**
+- All `pr-gate` tests passing on every PR ✅
+- Zero flaky tests on main branch ✅
+- Mean `pr-gate` duration < 45 s ✅
 
 ### Month 2 (Days 31-60) — Coverage expansion
 
-- [ ] **Step 6 — Ledger tests (CT45-CT52)**
-  - Ledger created after capture, correct amounts, no entries after reject
-  - Ledger not duplicated on concurrent captures (integration with CT44)
-  - `GET /ledger/{id}` returns 404 for unknown payment
 - [ ] **Integration flows**
   - Full happy path: create → capture → GET payment → GET ledger
   - Full rejection path: create → reject → GET payment → capture blocked (422)
@@ -413,6 +437,9 @@ The following areas have no automated coverage yet:
 - [ ] **Contract tests**
   - Response schema validation (amount is integer, currency is string, etc.)
   - Ensure no undocumented fields are added without a test update
+- [ ] **Boundary / negative cases for ledger**
+  - 3-way split with non-divisible amounts (e.g. 33/33/34)
+  - Very large amounts at split boundaries
 - [ ] **Observability**
   - Playwright HTML reporter enabled locally (`npx playwright show-report`)
   - Slack/email notification on `full-suite` failure via GitHub Actions

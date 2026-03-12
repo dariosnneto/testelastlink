@@ -1,14 +1,20 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { validPaymentPayload, uniqueKey, createAndCapture, createAndReject } from '../helpers/payment-helpers';
+import {
+  validPaymentPayload,
+  uniqueKey,
+  createAndCapture,
+  createAndReject,
+  type PaymentResponse,
+} from '../helpers/payment-helpers';
 
-// Local helper: creates a fresh PENDING payment and asserts it was created.
-async function createPayment(request: APIRequestContext) {
+// Local helper: creates a fresh PENDING payment and asserts creation succeeded.
+async function createPayment(request: APIRequestContext): Promise<PaymentResponse> {
   const res = await request.post('/payments', {
     headers: { 'Idempotency-Key': uniqueKey() },
     data: validPaymentPayload(),
   });
   expect(res.status()).toBe(201);
-  return (await res.json()) as { payment_id: string };
+  return res.json();
 }
 
 test.describe('Payment State Transitions', () => {
@@ -59,7 +65,7 @@ test.describe('Payment State Transitions', () => {
   //
   // All four illegal transitions are parametrised to avoid repeating the same
   // structure four times. The error message from the domain is:
-  //   "Payment is already {STATUS}." — so we assert toContain(`already ${currentStatus}`)
+  //   "Payment is already {STATUS}." — asserted via toContain(`already ${currentStatus}`)
   // ---------------------------------------------------------------------------
   test.describe('Invalid state transitions', () => {
     const invalidTransitions = [
@@ -127,46 +133,20 @@ test.describe('Payment State Transitions', () => {
   );
 
   // ---------------------------------------------------------------------------
-  // CT39 — 422 error message references the actual current status
-  //   - double-capture  → error contains "already APPROVED"
-  //   - double-reject   → error contains "already FAILED"
-  // ---------------------------------------------------------------------------
-  test(
-    'CT39 - 422 error message names the current status ("already APPROVED" / "already FAILED")',
-    { tag: ['@api', '@state-machine'] },
-    async ({ request }) => {
-      // Arrange
-      const { payment: approvedPayment } = await createAndCapture(request);
-      const { payment: failedPayment }   = await createAndReject(request);
-
-      // Act — try to capture an APPROVED payment
-      const captureAgain = await request.post(`/payments/${approvedPayment.payment_id}/capture`);
-      // Act — try to reject a FAILED payment
-      const rejectAgain  = await request.post(`/payments/${failedPayment.payment_id}/reject`);
-
-      // Assert
-      expect(captureAgain.status()).toBe(422);
-      expect((await captureAgain.json()).error).toContain('APPROVED');
-
-      expect(rejectAgain.status()).toBe(422);
-      expect((await rejectAgain.json()).error).toContain('FAILED');
-    },
-  );
-
-  // ---------------------------------------------------------------------------
-  // CT40 — GET after capture reflects APPROVED status (state is persisted)
+  // CT40 — State is persisted: GET after capture reflects APPROVED
+  //
+  // CT33-CT36 already cover the 422 error messages for invalid transitions,
+  // so no separate "CT39" is needed — it would duplicate those assertions.
   // ---------------------------------------------------------------------------
   test(
     'CT40 - GET /payments/{id} after capture returns status APPROVED',
     { tag: ['@api', '@state-machine'] },
     async ({ request }) => {
-      // Arrange
+      // Arrange — create payment and bring it to APPROVED state
       const { payment_id } = await createPayment(request);
-
-      // Act — capture
       await request.post(`/payments/${payment_id}/capture`);
 
-      // Act — read back
+      // Act — read back the persisted state
       const getResponse = await request.get(`/payments/${payment_id}`);
 
       // Assert

@@ -1,10 +1,11 @@
 import { test, expect, type PlaywrightWorkerArgs } from '@playwright/test';
-import { validPaymentPayload, uniqueKey } from '../helpers/payment-helpers';
+import { validPaymentPayload, uniqueKey, type LedgerEntry } from '../helpers/payment-helpers';
 
 const BASE_URL = 'http://localhost:3000';
 const CONCURRENCY = 10;
 
-type Result<T = unknown> = { status: number; body: T };
+// Descriptive name: what the function returns, not a generic "Result"
+type PostResult<T = unknown> = { status: number; body: T };
 
 /**
  * Fires a single request from a fresh, independent APIRequestContext and
@@ -16,7 +17,7 @@ async function firePost<T = unknown>(
   playwright: PlaywrightWorkerArgs['playwright'],
   path: string,
   options: { headers?: Record<string, string>; data?: unknown } = {},
-): Promise<Result<T>> {
+): Promise<PostResult<T>> {
   const ctx = await playwright.request.newContext({
     baseURL: BASE_URL,
     extraHTTPHeaders: { 'Content-Type': 'application/json' },
@@ -92,14 +93,8 @@ test.describe('Concurrency', () => {
         ),
       );
 
-      // Assert — no 5xx
+      // Assert — only 200 or 422 (implicitly rules out 5xx)
       const statuses = results.map((r) => r.status);
-      for (const s of statuses) {
-        expect(s).toBeGreaterThanOrEqual(200);
-        expect(s).toBeLessThan(500);
-      }
-
-      // Assert — only 200 or 422
       for (const s of statuses) {
         expect([200, 422]).toContain(s);
       }
@@ -173,7 +168,7 @@ test.describe('Concurrency', () => {
       expect(ledgerRes.status()).toBe(200);
       const { entries } = (await ledgerRes.json()) as {
         payment_id: string;
-        entries: Array<{ type: string; account: string; amount: number }>;
+        entries: LedgerEntry[];
       };
       await ctx.dispose();
 

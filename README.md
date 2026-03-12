@@ -98,7 +98,6 @@ mock-payments-api/
 | Webhook resilience — retry, timeout, health | `webhook-resilience.spec.ts` | 5 | CT53–CT57 |
 | **Total** | | **62** | |
 
-> CT39 removed — was 100% redundant with CT33–CT36 and violated the one-Act-per-test rule.
 
 ### Risk matrix coverage (top risks)
 

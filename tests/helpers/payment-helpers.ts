@@ -1,4 +1,4 @@
-import { APIRequestContext } from '@playwright/test';
+import { expect, type APIRequestContext } from '@playwright/test';
 
 // ---------------------------------------------------------------------------
 // Payload builder
@@ -15,6 +15,17 @@ export interface PaymentPayload {
   customer_id: string;
   merchant_id: string;
   split: SplitItem[];
+}
+
+export interface PaymentResponse {
+  payment_id: string;
+  status: string;
+  amount: number;
+  currency: string;
+  customer_id: string;
+  merchant_id: string;
+  split: SplitItem[];
+  created_at: string;
 }
 
 export function validPaymentPayload(overrides: Partial<PaymentPayload> = {}): PaymentPayload {
@@ -51,15 +62,19 @@ export async function createAndCapture(request: APIRequestContext, overrides: Pa
 
   const payment = await createRes.json();
   const captureRes = await request.post(`/payments/${payment.payment_id}/capture`);
-  return { createRes, captureRes, payment: await captureRes.json() };
+  return { createRes, captureRes, payment: (await captureRes.json()) as PaymentResponse };
 }
 
-export async function createPending(request: APIRequestContext, overrides: Partial<PaymentPayload> = {}) {
+export async function createPending(
+  request: APIRequestContext,
+  overrides: Partial<PaymentPayload> = {},
+): Promise<PaymentResponse> {
   const res = await request.post('/payments', {
-    headers: { 'Idempotency-Key': uniqueKey('ledger') },
+    headers: { 'Idempotency-Key': uniqueKey('pending') },
     data: validPaymentPayload(overrides),
   });
-  return res.json() as Promise<{ payment_id: string }>;
+  expect(res.status()).toBe(201);
+  return res.json();
 }
 
 export async function createAndReject(request: APIRequestContext, overrides: Partial<PaymentPayload> = {}) {
@@ -70,7 +85,7 @@ export async function createAndReject(request: APIRequestContext, overrides: Par
 
   const payment = await createRes.json();
   const rejectRes = await request.post(`/payments/${payment.payment_id}/reject`);
-  return { createRes, rejectRes, payment: await rejectRes.json() };
+  return { createRes, rejectRes, payment: (await rejectRes.json()) as PaymentResponse };
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +101,24 @@ export async function setWebhookMode(request: APIRequestContext, mode: WebhookMo
 }
 
 // ---------------------------------------------------------------------------
-// Timing
+// Polling — prefer over fixed sleep() when an observable condition exists
+// ---------------------------------------------------------------------------
+
+export async function pollUntil(
+  fn: () => Promise<boolean>,
+  { timeout = 10_000, interval = 250, label = 'condition' } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await fn()) return;
+    await new Promise((r) => setTimeout(r, interval));
+  }
+  throw new Error(`pollUntil: "${label}" not satisfied within ${timeout}ms`);
+}
+
+// ---------------------------------------------------------------------------
+// Timing — use only when polling is not possible (e.g. waiting for a
+// background retry loop whose completion has no observable API signal)
 // ---------------------------------------------------------------------------
 
 export function sleep(ms: number): Promise<void> {

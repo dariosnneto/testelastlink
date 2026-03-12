@@ -1,0 +1,70 @@
+# Changes filter for dorny/paths-filter
+# Maps areas of the codebase to the test tags that cover them.
+# Use in CI to run only the tests relevant to what changed.
+#
+# Usage example (.github/workflows/playwright-ci.yml):
+#
+#   - uses: dorny/paths-filter@v3
+#     id: changes
+#     with:
+#       filters: .github/changes-filter.yaml
+#
+#   - name: API tests
+#     if: steps.changes.outputs.api-tests == 'true' || steps.changes.outputs.infra == 'true'
+#     run: npx playwright test --grep "@api"
+#
+#   - name: Full suite (test helpers changed)
+#     if: steps.changes.outputs.test-helpers == 'true'
+#     run: npx playwright test
+
+api-tests:
+  - "API/**"
+  - "Application/UseCases/CreatePayment/**"
+  - "Application/UseCases/GetPayment/**"
+  - "Domain/Entities/Payment.cs"
+  - "Domain/ValueObjects/**"
+  - "tests/api/**"
+
+state-machine-tests:
+  - "Domain/Entities/Payment.cs"
+  - "Application/UseCases/CapturePayment/**"
+  - "Application/UseCases/RejectPayment/**"
+  - "tests/api/payment-state-transitions.spec.ts"
+
+idempotency-tests:
+  - "Application/UseCases/CreatePayment/**"
+  - "Application/Ports/IIdempotencyStore.cs"
+  - "Infrastructure/Persistence/InMemoryIdempotencyStore.cs"
+  - "tests/api/payment-idempotency.spec.ts"
+
+ledger-tests:
+  - "Domain/Entities/LedgerEntry.cs"
+  - "Domain/Repositories/ILedgerRepository.cs"
+  - "Infrastructure/Persistence/InMemoryLedgerRepository.cs"
+  - "Application/UseCases/GetLedger/**"
+  - "Application/UseCases/CapturePayment/**"
+  - "API/Controllers/LedgerController.cs"
+  - "tests/ledger/**"
+
+webhook-tests:
+  - "Infrastructure/Adapters/WebhookAdapter.cs"
+  - "Application/Ports/IWebhookPort.cs"
+  - "tests/webhook/**"
+
+concurrency-tests:
+  - "Infrastructure/Persistence/**"
+  - "Domain/Entities/Payment.cs"
+  - "tests/concurrency/**"
+
+# Infrastructure changes → run everything
+infra:
+  - "Dockerfile"
+  - "docker-compose*.yml"
+  - "Program.cs"
+  - "MockPaymentsApi.csproj"
+  - "playwright.config.ts"
+  - "package.json"
+
+# Shared test helpers → run everything (helpers affect all tests)
+test-helpers:
+  - "tests/helpers/**"

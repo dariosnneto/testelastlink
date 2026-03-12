@@ -32,19 +32,16 @@ export default defineConfig({
       timeout: 10_000,
     },
     {
-      name: 'integration',
-      testMatch: '**/integration/**/*.spec.ts',
-      timeout: 20_000,
-    },
-    {
+      // 'integration' project removed — no tests exist in tests/integration/
+      // Max retry schedule: 1 s + 3 s + 5 s = 9 s; test.slow() triples this value.
       name: 'resilience',
       testMatch: ['**/resilience/**/*.spec.ts', '**/webhook/**/*.spec.ts'],
-      timeout: 70_000,
+      timeout: 25_000,
     },
     {
       name: 'concurrency',
       testMatch: '**/concurrency/**/*.spec.ts',
-      timeout: 30_000,
+      timeout: 15_000,
     },
   ],
 });

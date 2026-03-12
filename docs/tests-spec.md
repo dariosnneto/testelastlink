@@ -2,16 +2,29 @@
 
 ## Overview
 
-| Category | File | Tests | CTs |
-|---|---|:---:|---|
-| Payment Creation | `tests/api/payment-creation.spec.ts` | 9 | CT01–CT07, CT58, CT59 |
-| Payment Validation | `tests/api/payment-validation.spec.ts` | 19 | CT08–CT24, CT60, CT61 |
-| Payment Idempotency | `tests/api/payment-idempotency.spec.ts` | 7 | CT25–CT30, CT63 |
-| Payment State Transitions | `tests/api/payment-state-transitions.spec.ts` | 10 | CT31–CT38, CT40, CT62 |
-| Concurrency | `tests/concurrency/concurrent-requests.spec.ts` | 4 | CT41–CT44 |
-| Ledger | `tests/ledger/ledger.spec.ts` | 8 | CT45–CT52 |
-| Webhook Resilience | `tests/webhook/webhook-resilience.spec.ts` | 5 | CT53–CT57 |
-| **Total** | | **62** | |
+| Category | File | Tests | CTs | Tags |
+|---|---|:---:|---|---|
+| Payment Creation | `tests/api/payment-creation.spec.ts` | 9 | CT01–CT07, CT58, CT59 | `@smoke` `@api` `@creation` `@validation` `@idempotency` |
+| Payment Validation | `tests/api/payment-validation.spec.ts` | 19 | CT08–CT24, CT60, CT61 | `@api` `@validation` |
+| Payment Idempotency | `tests/api/payment-idempotency.spec.ts` | 7 | CT25–CT30, CT63 | `@api` `@idempotency` `@critical` |
+| Payment State Transitions | `tests/api/payment-state-transitions.spec.ts` | 10 | CT31–CT38, CT40, CT62 | `@smoke` `@api` `@state-machine` `@critical` |
+| Concurrency | `tests/concurrency/concurrent-requests.spec.ts` | 4 | CT41–CT44 | `@concurrency` `@idempotency` `@ledger` `@critical` |
+| Ledger | `tests/ledger/ledger.spec.ts` | 8 | CT45–CT52 | `@ledger` `@smoke` `@critical` |
+| Webhook Resilience | `tests/webhook/webhook-resilience.spec.ts` | 5 | CT53–CT57 | `@webhook` `@smoke` `@resilience` `@critical` |
+| **Total** | | **62** | | |
+
+### Scenario breakdown by domain
+
+| Domain | Cenários | Percentual |
+|---|:---:|:---:|
+| Validation (input rules) | 19 | 30.6% |
+| State transitions + not-found | 10 | 16.1% |
+| Creation (happy path + contracts) | 9 | 14.5% |
+| Idempotency (deep-dive) | 7 | 11.3% |
+| Ledger (accounting) | 8 | 12.9% |
+| Webhook resilience | 5 | 8.1% |
+| Concurrency | 4 | 6.5% |
+| **Total** | **62** | **100%** |
 
 > CT39 was removed — 100% redundant with CT33–CT36 and violated the one-Act-per-test rule.
 

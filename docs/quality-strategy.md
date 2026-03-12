@@ -373,7 +373,7 @@ ledger.write.failed            { payment_id, error, stack_trace }
 | CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping (§3) |
 | Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §2 |
 | Flaky test rate (last 30 runs) | < 2% | 0% | GitHub Actions history |
-| Total test cases | — | **62** | 7 spec files |
+| Total test cases | — | **62** | 7 spec files (api: 45, concurrency: 4, ledger: 8, webhook: 5) |
 
 ### How each metric drives decisions
 

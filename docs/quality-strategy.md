@@ -12,8 +12,8 @@
 
 | Stage | Trigger | Projects | Steps covered | Est. time |
 |---|---|---|---|---|
-| **PR Gate** | Pull Request | `api` + `ledger` | 1, 2, 3, 4, 6 | ~30 s |
-| **Full Suite** | Push to `main` / daily cron | all | 1–7 | ~2-3 min |
+| **PR Gate** | Pull Request | `api` + `ledger` | 1, 2, 3, 4, 6 | ~10 s |
+| **Full Suite** | Push to `main` / daily cron | all | 1–7 | ~30 s (3 shards × 2 workers) |
 
 The split is intentional: **PR Gate covers all P0/P1 financial risks** (creation,
 validation, idempotency, state transitions, ledger consistency) using only fast,
@@ -22,10 +22,11 @@ a failure doesn't block a developer's day, but still gates the main branch.
 
 ### Fast-feedback strategy
 
-- PR Gate runs in < 45 s — faster than a code review round-trip.
-- Webhook tests (CT53–CT57, ~22 s each) are excluded from PR Gate because they
-  depend on Docker network timing and add variance without improving signal on
-  a new PR.
+- PR Gate runs in < 15 s — faster than a code review round-trip.
+- Webhook tests (CT53–CT57) are excluded from PR Gate because they depend on
+  Docker network timing and add variance without improving signal on a new PR.
+  CT56 (retry exhaustion) is the single slowest test at ~12 s and dominates
+  the `full-suite` shard that receives it.
 - A PR Gate failure blocks merge. Full Suite failure triggers a Slack alert and
   must be fixed before the next PR is merged.
 
@@ -343,8 +344,8 @@ ledger.write.failed            { payment_id, error, stack_trace }
 | Metric | Target | Current | Source |
 |---|---|---|---|
 | Test suite pass rate (main branch) | 100% | 100% | GitHub Actions `full-suite` |
-| `pr-gate` duration | < 60 s | ~30 s | GitHub Actions timing |
-| `full-suite` duration | < 5 min | ~2-3 min | GitHub Actions timing |
+| `pr-gate` duration | < 60 s | ~10 s | Local timing (16 workers, `fullyParallel: true`) |
+| `full-suite` duration | < 5 min | ~15 s | Local timing (16 workers, `fullyParallel: true`) / ~30 s CI (3 shards × 2 workers) |
 | CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping |
 | Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §2 |
 | Flaky test rate (last 30 runs) | < 2% | 0% | GitHub Actions history |

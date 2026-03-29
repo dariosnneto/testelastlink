@@ -99,39 +99,6 @@ test.describe('Payment Creation', () => {
   );
 
   // ---------------------------------------------------------------------------
-  // CT05 — Idempotency: same key + same payload → 201 with same payment_id
-  // ---------------------------------------------------------------------------
-  test(
-    'CT05 - same Idempotency-Key + same payload returns 201 with original payment',
-    { tag: ['@api', '@idempotency'] },
-    async ({ request }) => {
-      // Arrange
-      const key = uniqueKey('ct05');
-      const payload = validPaymentPayload();
-
-      // Act — first request
-      const first = await request.post('/payments', {
-        headers: { 'Idempotency-Key': key },
-        data: payload,
-      });
-
-      // Act — second request (identical)
-      const second = await request.post('/payments', {
-        headers: { 'Idempotency-Key': key },
-        data: payload,
-      });
-
-      // Assert
-      expect(first.status()).toBe(201);
-      expect(second.status()).toBe(201);
-
-      const firstBody = await first.json();
-      const secondBody = await second.json();
-      expect(secondBody.payment_id).toBe(firstBody.payment_id);
-    },
-  );
-
-  // ---------------------------------------------------------------------------
   // CT06 — Idempotency conflict: same key + different payload → 409
   // ---------------------------------------------------------------------------
   test(

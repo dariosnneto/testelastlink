@@ -4,29 +4,30 @@
 
 | Category | File | Tests | CTs | Tags |
 |---|---|:---:|---|---|
-| Payment Creation | `tests/api/payment-creation.spec.ts` | 9 | CT01–CT07, CT58, CT59 | `@smoke` `@api` `@creation` `@validation` `@idempotency` |
+| Payment Creation | `tests/api/payment-creation.spec.ts` | 8 | CT01–CT04, CT06–CT07, CT58, CT59 | `@smoke` `@api` `@creation` `@validation` `@idempotency` |
 | Payment Validation | `tests/api/payment-validation.spec.ts` | 19 | CT08–CT24, CT60, CT61 | `@api` `@validation` |
 | Payment Idempotency | `tests/api/payment-idempotency.spec.ts` | 7 | CT25–CT30, CT63 | `@api` `@idempotency` `@critical` |
 | Payment State Transitions | `tests/api/payment-state-transitions.spec.ts` | 10 | CT31–CT38, CT40, CT62 | `@smoke` `@api` `@state-machine` `@critical` |
 | Concurrency | `tests/concurrency/concurrent-requests.spec.ts` | 4 | CT41–CT44 | `@concurrency` `@idempotency` `@ledger` `@critical` |
 | Ledger | `tests/ledger/ledger.spec.ts` | 8 | CT45–CT52 | `@ledger` `@smoke` `@critical` |
 | Webhook Resilience | `tests/webhook/webhook-resilience.spec.ts` | 5 | CT53–CT57 | `@webhook` `@smoke` `@resilience` `@critical` |
-| **Total** | | **62** | | |
+| **Total** | | **61** | | |
 
 ### Scenario breakdown by domain
 
 | Domain | Cenários | Percentual |
 |---|:---:|:---:|
-| Validation (input rules) | 19 | 30.6% |
-| State transitions + not-found | 10 | 16.1% |
-| Creation (happy path + contracts) | 9 | 14.5% |
-| Idempotency (deep-dive) | 7 | 11.3% |
-| Ledger (accounting) | 8 | 12.9% |
-| Webhook resilience | 5 | 8.1% |
-| Concurrency | 4 | 6.5% |
-| **Total** | **62** | **100%** |
+| Validation (input rules) | 19 | 31.1% |
+| State transitions + not-found | 10 | 16.4% |
+| Creation (happy path + contracts) | 8 | 13.1% |
+| Idempotency (deep-dive) | 7 | 11.5% |
+| Ledger (accounting) | 8 | 13.1% |
+| Webhook resilience | 5 | 8.2% |
+| Concurrency | 4 | 6.6% |
+| **Total** | **61** | **100%** |
 
 > CT39 was removed — 100% redundant with CT33–CT36 and violated the one-Act-per-test rule.
+> CT05 was removed — fully covered by CT25 (triple replay) and CT26 (full body comparison) in `payment-idempotency.spec.ts`.
 
 ---
 
@@ -38,7 +39,7 @@
 | `@critical` | P0/P1 financial risk — failure blocks release | CT06, CT30, CT33–CT36, CT42, CT44, CT47–CT49, CT54–CT55 |
 | `@api` | Tests an API endpoint directly | All `tests/api/` tests |
 | `@validation` | Input validation test | CT02–CT04, CT08–CT24, CT58, CT60–CT61 |
-| `@idempotency` | Idempotency behaviour | CT05–CT06, CT25–CT30, CT41, CT63 |
+| `@idempotency` | Idempotency behaviour | CT06, CT25–CT30, CT41, CT63 |
 | `@state-machine` | Payment state transition | CT31–CT38, CT40, CT62 |
 | `@ledger` | Ledger endpoint | CT44–CT52 |
 | `@webhook` | Webhook delivery or resilience | CT53–CT57 |
@@ -55,11 +56,12 @@
 | CT02 | `amount = 0` | `400` — `"Amount must be greater than 0"` | `@validation` |
 | CT03 | `currency = "USD"` | `400` — `"Currency must be BRL"` | `@validation` |
 | CT04 | Split percentages sum ≠ 100 | `400` — `"Split percentages must sum to 100"` | `@validation` |
-| CT05 | Same `Idempotency-Key` + same payload (replay) | `201` — same `payment_id` | `@idempotency` |
 | CT06 | Same `Idempotency-Key` + different payload | `409` — `"Idempotency key already used with a different payload"` | `@idempotency` `@critical` |
 | CT07 | No `Idempotency-Key` | `201` with a new `payment_id` on every call | `@creation` |
 | CT58 | `currency = "brl"` (lowercase) | `201` — response `currency` normalised to `"BRL"` | `@validation` |
 | CT59 | Valid payload | `201` — `Content-Type: application/json` header present | `@creation` |
+
+> CT05 (same key + same payload → 201, same `payment_id`) was removed. CT25 (triple replay) and CT26 (full body comparison) in `payment-idempotency.spec.ts` cover the same behaviour more thoroughly.
 
 ### Response shape contract (CT01)
 
@@ -82,12 +84,16 @@
 
 All validation failures return `400` with `{ "error": "<message>" }`.
 
+Groups of tests that share the same validation rule and error message are implemented as `for...of` loops following the same pattern established by CT33–CT36. Each loop iteration produces a distinct named test case in the reporter.
+
 ### Amount
 
 | ID | Input | Error message |
 |---|---|---|
 | CT08 | `amount = -1` | `"Amount must be greater than 0"` |
 | CT09 | `amount = -10000` | `"Amount must be greater than 0"` |
+
+> CT08–CT09 are parametrised in a single loop.
 | CT60 | `amount = 1` *(minimum valid boundary)* | `201` — accepted |
 | CT61 | `amount = Number.MAX_SAFE_INTEGER` | `201` — accepted (fits C# `long`) |
 
@@ -99,6 +105,7 @@ All validation failures return `400` with `{ "error": "<message>" }`.
 | CT11 | `currency = "EUR"` | `"Currency must be BRL"` |
 | CT12 | `currency = "BRL "` *(trailing space)* | `"Currency must be BRL"` |
 
+> CT10–CT12 are parametrised in a single loop.
 > `ToUpperInvariant()` is applied before validation, so `"brl"` → `"BRL"` (passes). `"BRL "` contains a space after normalisation and therefore fails.
 
 ### Split — sum
@@ -110,6 +117,8 @@ All validation failures return `400` with `{ "error": "<message>" }`.
 | CT15 | Two items summing to 99 | `"Split percentages must sum to 100"` |
 | CT16 | Two items summing to 101 | `"Split percentages must sum to 100"` |
 
+> CT13–CT16 are parametrised in a single loop (zero, under, and over boundary values).
+
 ### Split — per-item percentage
 
 | ID | Input | Error message |
@@ -118,12 +127,16 @@ All validation failures return `400` with `{ "error": "<message>" }`.
 | CT18 | Item `percentage = -1` | `"Percentage must be between 1 and 100"` |
 | CT19 | Item `percentage = 101` | `"Percentage must be between 1 and 100"` |
 
+> CT17–CT19 are parametrised in a single loop. CT18 sets the second split item to 101% to prevent the sum check from firing before the per-item check.
+
 ### Split — per-item recipient
 
 | ID | Input | Error message |
 |---|---|---|
 | CT20 | Item `recipient = ""` | `"Recipient is required"` |
 | CT21 | Item `recipient = "   "` *(whitespace)* | `"Recipient is required"` |
+
+> CT20–CT21 are parametrised in a single loop (`IsNullOrWhiteSpace` covers both).
 
 ### Cross-field / structural
 
@@ -180,6 +193,8 @@ The conflict detection hash covers **all payload fields**: `amount`, `currency`,
 | CT37 | capture `pay_doesnotexist` | `404` — `"not found"` |
 | CT38 | reject `pay_doesnotexist` | `404` — `"not found"` |
 | CT62 | GET `pay_00000000000000000000000000000000` | `404` — `"not found"` |
+
+> CT37–CT38 are implemented as a single parametrised loop over `['capture', 'reject']`, following the same pattern as CT33–CT36.
 
 ### Read-after-write consistency
 

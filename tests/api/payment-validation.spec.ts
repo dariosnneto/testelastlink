@@ -16,40 +16,27 @@ async function assertValidationError(response: APIResponse, expectedMessage?: st
   }
 }
 
+type SplitItem = { recipient: string; percentage: number };
+
 test.describe('Payment Validation', () => {
   // ---------------------------------------------------------------------------
   // Amount validation (CT08–CT09, CT60–CT61)
   // ---------------------------------------------------------------------------
   test.describe('Amount', () => {
-    test(
-      'CT08 - amount = -1 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({ amount: -1 });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Amount must be greater than 0');
-      },
-    );
-
-    test(
-      'CT09 - amount = -10000 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({ amount: -10000 });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Amount must be greater than 0');
-      },
-    );
+    // CT08–CT09: every negative value is rejected with the same rule.
+    for (const { label, amount } of [
+      { label: 'CT08', amount: -1 },
+      { label: 'CT09', amount: -10000 },
+    ]) {
+      test(
+        `${label} - amount = ${amount} returns 400`,
+        { tag: ['@api', '@validation'] },
+        async ({ request }) => {
+          const response = await request.post('/payments', { data: validPaymentPayload({ amount }) });
+          await assertValidationError(response, 'Amount must be greater than 0');
+        },
+      );
+    }
 
     test(
       'CT60 - amount = 1 (minimum valid boundary) returns 201',
@@ -88,234 +75,136 @@ test.describe('Payment Validation', () => {
   // Currency validation (CT10–CT12)
   // ---------------------------------------------------------------------------
   test.describe('Currency', () => {
-    test(
-      'CT10 - currency = "" returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({ currency: '' });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Currency must be BRL');
-      },
-    );
-
-    test(
-      'CT11 - currency = "EUR" returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({ currency: 'EUR' });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Currency must be BRL');
-      },
-    );
-
-    test(
-      'CT12 - currency = "BRL " (trailing space) returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange — ToUpperInvariant() preserves the space, so "BRL " ≠ "BRL"
-        const payload = validPaymentPayload({ currency: 'BRL ' });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Currency must be BRL');
-      },
-    );
+    // CT10–CT12: all non-"BRL" strings fail the same validation rule.
+    // CT12 uses a trailing space; ToUpperInvariant() preserves it, so "BRL " ≠ "BRL".
+    for (const { label, currency, description } of [
+      { label: 'CT10', currency: '',     description: '""' },
+      { label: 'CT11', currency: 'EUR',  description: '"EUR"' },
+      { label: 'CT12', currency: 'BRL ', description: '"BRL " (trailing space)' },
+    ]) {
+      test(
+        `${label} - currency = ${description} returns 400`,
+        { tag: ['@api', '@validation'] },
+        async ({ request }) => {
+          const response = await request.post('/payments', { data: validPaymentPayload({ currency }) });
+          await assertValidationError(response, 'Currency must be BRL');
+        },
+      );
+    }
   });
 
   // ---------------------------------------------------------------------------
   // Split sum validation (CT13–CT16)
   // ---------------------------------------------------------------------------
   test.describe('Split sum', () => {
-    test(
-      'CT13 - empty split array returns 400 (sum = 0)',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({ split: [] });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Split percentages must sum to 100');
+    // All four cases trigger the same "must sum to 100" rule; the split arrays
+    // differ to cover zero, under, and over boundary values.
+    for (const { label, description, split } of [
+      {
+        label: 'CT13',
+        description: 'empty split array (sum = 0)',
+        split: [] as SplitItem[],
       },
-    );
-
-    test(
-      'CT14 - single split item at 50% returns 400 (sum = 50)',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [{ recipient: 'seller_1', percentage: 50 }],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Split percentages must sum to 100');
+      {
+        label: 'CT14',
+        description: 'single item at 50% (sum = 50)',
+        split: [{ recipient: 'seller_1', percentage: 50 }],
       },
-    );
-
-    test(
-      'CT15 - split percentages sum to 99 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: 'seller_1', percentage: 79 },
-            { recipient: 'platform', percentage: 20 }, // total = 99
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Split percentages must sum to 100');
+      {
+        label: 'CT15',
+        description: 'two items summing to 99',
+        split: [
+          { recipient: 'seller_1', percentage: 79 },
+          { recipient: 'platform', percentage: 20 },
+        ],
       },
-    );
-
-    test(
-      'CT16 - split percentages sum to 101 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: 'seller_1', percentage: 81 },
-            { recipient: 'platform', percentage: 20 }, // total = 101
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Split percentages must sum to 100');
+      {
+        label: 'CT16',
+        description: 'two items summing to 101',
+        split: [
+          { recipient: 'seller_1', percentage: 81 },
+          { recipient: 'platform', percentage: 20 },
+        ],
       },
-    );
+    ]) {
+      test(
+        `${label} - ${description} returns 400`,
+        { tag: ['@api', '@validation'] },
+        async ({ request }) => {
+          const response = await request.post('/payments', { data: validPaymentPayload({ split }) });
+          await assertValidationError(response, 'Split percentages must sum to 100');
+        },
+      );
+    }
   });
 
   // ---------------------------------------------------------------------------
   // Split item — percentage range (CT17–CT19)
   // ---------------------------------------------------------------------------
   test.describe('Split item — percentage range', () => {
-    test(
-      'CT17 - split item percentage = 0 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: 'seller_1', percentage: 0 },
-            { recipient: 'platform', percentage: 100 },
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Percentage must be between 1 and 100');
+    // CT17–CT19: item-level validation rejects percentages outside [1, 100].
+    // Note: CT18 sets the second item to 101 so the sum check does not fire
+    // before the item check — isolating the per-item validation path.
+    for (const { label, description, split } of [
+      {
+        label: 'CT17',
+        description: 'percentage = 0',
+        split: [
+          { recipient: 'seller_1', percentage: 0 },
+          { recipient: 'platform', percentage: 100 },
+        ],
       },
-    );
-
-    test(
-      'CT18 - split item percentage = -1 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: 'seller_1', percentage: -1 },
-            { recipient: 'platform', percentage: 101 },
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Percentage must be between 1 and 100');
+      {
+        label: 'CT18',
+        description: 'percentage = -1',
+        split: [
+          { recipient: 'seller_1', percentage: -1 },
+          { recipient: 'platform', percentage: 101 },
+        ],
       },
-    );
-
-    test(
-      'CT19 - split item percentage = 101 returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [{ recipient: 'seller_1', percentage: 101 }],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Percentage must be between 1 and 100');
+      {
+        label: 'CT19',
+        description: 'percentage = 101',
+        split: [{ recipient: 'seller_1', percentage: 101 }],
       },
-    );
+    ]) {
+      test(
+        `${label} - split item ${description} returns 400`,
+        { tag: ['@api', '@validation'] },
+        async ({ request }) => {
+          const response = await request.post('/payments', { data: validPaymentPayload({ split }) });
+          await assertValidationError(response, 'Percentage must be between 1 and 100');
+        },
+      );
+    }
   });
 
   // ---------------------------------------------------------------------------
   // Split item — recipient (CT20–CT21)
   // ---------------------------------------------------------------------------
   test.describe('Split item — recipient', () => {
-    test(
-      'CT20 - split item recipient = "" returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: '', percentage: 80 },
-            { recipient: 'platform', percentage: 20 },
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Recipient is required');
-      },
-    );
-
-    test(
-      'CT21 - split item recipient = whitespace returns 400',
-      { tag: ['@api', '@validation'] },
-      async ({ request }) => {
-        // Arrange — string.IsNullOrWhiteSpace catches "   "
-        const payload = validPaymentPayload({
-          split: [
-            { recipient: '   ', percentage: 80 },
-            { recipient: 'platform', percentage: 20 },
-          ],
-        });
-
-        // Act
-        const response = await request.post('/payments', { data: payload });
-
-        // Assert
-        await assertValidationError(response, 'Recipient is required');
-      },
-    );
+    // CT20–CT21: empty string and whitespace-only strings both fail the same
+    // IsNullOrWhiteSpace check in the domain layer.
+    for (const { label, recipient, description } of [
+      { label: 'CT20', recipient: '',    description: '""' },
+      { label: 'CT21', recipient: '   ', description: 'whitespace ("   ")' },
+    ]) {
+      test(
+        `${label} - split item recipient = ${description} returns 400`,
+        { tag: ['@api', '@validation'] },
+        async ({ request }) => {
+          const response = await request.post('/payments', {
+            data: validPaymentPayload({
+              split: [
+                { recipient, percentage: 80 },
+                { recipient: 'platform', percentage: 20 },
+              ],
+            }),
+          });
+          await assertValidationError(response, 'Recipient is required');
+        },
+      );
+    }
   });
 
   // ---------------------------------------------------------------------------

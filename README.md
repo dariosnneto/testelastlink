@@ -26,7 +26,7 @@ End-to-end automated test suite for the Mock Payments API, built with **Playwrig
 | **Framework** | Playwright `^1.49.0` (API testing via `request` fixture) |
 | **Language** | TypeScript |
 | **API under test** | ASP.NET Core 8 — Clean Architecture + DDD |
-| **Test cases** | 62 test cases across 4 Playwright projects |
+| **Test cases** | 61 test cases across 4 Playwright projects |
 | **CI trigger** | PR Gate on every pull request; Full Suite on push to `main` + daily cron |
 | **PR Gate duration** | ~10 s |
 | **Full Suite duration** | ~30 s (3 shards × 2 workers) |
@@ -58,7 +58,7 @@ mock-payments-api/
 │   │                                   #   createPending, setWebhookMode,
 │   │                                   #   pollUntil, sleep
 │   ├── api/                            # Project: api (10 s timeout)
-│   │   ├── payment-creation.spec.ts    # CT01–CT07, CT58, CT59      (9 tests)
+│   │   ├── payment-creation.spec.ts    # CT01–CT04, CT06–CT07, CT58, CT59  (8 tests)
 │   │   ├── payment-validation.spec.ts  # CT08–CT24, CT60, CT61     (19 tests)
 │   │   ├── payment-idempotency.spec.ts # CT25–CT30, CT63            (7 tests)
 │   │   └── payment-state-transitions.spec.ts  # CT31–CT38, CT40, CT62  (10 tests)
@@ -89,21 +89,21 @@ mock-payments-api/
 
 | Area | File | Tests | CTs |
 |---|---|:---:|---|
-| Payment creation — happy path + idempotency | `payment-creation.spec.ts` | 9 | CT01–CT07, CT58, CT59 |
+| Payment creation — happy path + idempotency | `payment-creation.spec.ts` | 8 | CT01–CT04, CT06–CT07, CT58, CT59 |
 | Input validation — amount, currency, split | `payment-validation.spec.ts` | 19 | CT08–CT24, CT60, CT61 |
 | Idempotency deep-dive | `payment-idempotency.spec.ts` | 7 | CT25–CT30, CT63 |
 | State machine — transitions + 404 + consistency | `payment-state-transitions.spec.ts` | 10 | CT31–CT38, CT40, CT62 |
 | Concurrency — same-key race, ledger mutex | `concurrent-requests.spec.ts` | 4 | CT41–CT44 |
 | Ledger consistency — shape, amounts, balance | `ledger.spec.ts` | 8 | CT45–CT52 |
 | Webhook resilience — retry, timeout, health | `webhook-resilience.spec.ts` | 5 | CT53–CT57 |
-| **Total** | | **62** | |
+| **Total** | | **61** | |
 
 
 ### Risk matrix coverage (top risks)
 
 | Risk | Score | Covered by |
 |---|:---:|---|
-| Duplicate payment (missing idempotency key) | 9 | CT05, CT25–CT30, CT63 |
+| Duplicate payment (missing idempotency key) | 9 | CT25–CT30, CT63 |
 | Double capture → double ledger entry | 9 | CT33, CT42, CT44 |
 | Invalid amount/currency accepted | 9 | CT02, CT08–CT12, CT60, CT61 |
 | Split percentages ≠ 100 accepted → ledger imbalance | 9 | CT04, CT13–CT16, CT22 |
@@ -195,8 +195,8 @@ Two GitHub Actions jobs defined in [`.github/workflows/ci.yml`](.github/workflow
 
 | Job | Trigger | Projects | Tests | Est. time |
 |---|---|---|:---:|---|
-| `pr-gate` | Every pull request | `api` + `ledger` | 53 | ~10 s |
-| `full-suite` | Push to `main` + daily cron (06:00 UTC-3) | All 4 projects | 62 | ~30 s |
+| `pr-gate` | Every pull request | `api` + `ledger` | 52 | ~10 s |
+| `full-suite` | Push to `main` + daily cron (06:00 UTC-3) | All 4 projects | 61 | ~30 s |
 
 ### Pipeline strategy
 
@@ -310,7 +310,7 @@ Full documentation in [`docs/quality-strategy.md`](docs/quality-strategy.md) and
 | Full Suite duration | < 5 min | ~30 s |
 | Critical-risk (score ≥ 6) coverage | 100% | 100% |
 | Flaky test rate (last 30 runs) | < 2% | 0% |
-| Total test cases | — | **62** |
+| Total test cases | — | **61** |
 
 ### Assumptions
 

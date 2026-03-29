@@ -60,7 +60,7 @@ Coverage indicates which test cases address each risk.
 
 | # | Risk | Probability | Impact | Score | Mitigation / Coverage |
 |---|---|:---:|:---:|:---:|---|
-| R01 | Duplicate payment created due to missing idempotency key | 3 | 3 | **9** | CT05, CT25–CT30, CT63 |
+| R01 | Duplicate payment created due to missing idempotency key | 3 | 3 | **9** | CT25–CT30, CT63 |
 | R02 | Idempotency key reused with different payload → silent data corruption | 2 | 3 | **6** | CT06, CT28, CT30 |
 | R03 | Payment captured twice → double ledger entry / double charge | 3 | 3 | **9** | CT33, CT42, CT44 |
 | R04 | Webhook failure causes capture to fail / roll back | 2 | 3 | **6** | CT54, CT55 |
@@ -82,12 +82,14 @@ Coverage indicates which test cases address each risk.
 ## 3. Test Coverage Map
 
 ```
-CT01–CT07    Payment creation happy path + structural idempotency
-CT08–CT24    Input validation — amount, currency, split (17 edge cases)
+CT01–CT04, CT06–CT07   Payment creation happy path + structural idempotency
+CT08–CT24    Input validation — amount, currency, split (17 edge cases,
+              grouped into parametrised loops: CT08–CT09, CT10–CT12,
+              CT13–CT16, CT17–CT19, CT20–CT21)
 CT25–CT30    Idempotency deep-dive — triple replay, full body comparison,
               case sensitivity, hash coverage, conflict state preservation
 CT31–CT38    State machine — all 4 valid+invalid transitions, both 404 paths,
-              error message contract (CT33–CT36 parametrised)
+              error message contract (CT33–CT36 parametrised; CT37–CT38 parametrised)
 CT40         Read-after-write consistency (GET after capture)
 CT41–CT44    Concurrency — same-key race, concurrent capture, keyless creates,
               ledger mutex verification
@@ -373,7 +375,7 @@ ledger.write.failed            { payment_id, error, stack_trace }
 | CT coverage of API endpoints | 100% of documented endpoints | 100% | Manual mapping (§3) |
 | Critical-risk (score ≥ 6) coverage | 100% | 100% | Risk matrix §2 |
 | Flaky test rate (last 30 runs) | < 2% | 0% | GitHub Actions history |
-| Total test cases | — | **62** | 7 spec files (api: 45, concurrency: 4, ledger: 8, webhook: 5) |
+| Total test cases | — | **61** | 7 spec files (api: 44, concurrency: 4, ledger: 8, webhook: 5) |
 
 ### How each metric drives decisions
 
@@ -410,7 +412,7 @@ The following areas have no automated coverage yet:
 
 **Done (Steps 0-8 + test suite review):**
 - [x] Playwright setup with TypeScript, 4 projects, CI pipeline
-- [x] Payment creation tests (CT01–CT07, CT58–CT59)
+- [x] Payment creation tests (CT01–CT04, CT06–CT07, CT58–CT59)
 - [x] Validation tests (CT08–CT24, CT60–CT61)
 - [x] Idempotency tests (CT25–CT30, CT63)
 - [x] State transition tests (CT31–CT38, CT40, CT62) — CT39 removed (redundant)
@@ -422,6 +424,7 @@ The following areas have no automated coverage yet:
 - [x] `pollUntil` helper; `sleep` scoped to CT56 only
 - [x] AGENTS guide compliance review — all 21 violations resolved
 - [x] Quality strategy documentation
+- [x] Test suite deduplication — CT05 removed; CT08–CT09, CT10–CT12, CT13–CT16, CT17–CT19, CT20–CT21, CT37–CT38 parametrised into loops
 
 **Targets met:**
 - All `pr-gate` tests passing on every PR ✅

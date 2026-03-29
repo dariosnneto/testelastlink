@@ -99,38 +99,28 @@ test.describe('Payment State Transitions', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // CT37 — Capture non-existent payment → 404
+  // CT37–CT38 — Action on non-existent payment → 404
   // ---------------------------------------------------------------------------
-  test(
-    'CT37 - capturing a non-existent payment_id returns 404',
-    { tag: ['@api', '@state-machine'] },
-    async ({ request }) => {
-      // Act
-      const response = await request.post('/payments/pay_doesnotexist/capture');
+  test.describe('Non-existent payment', () => {
+    for (const { label, action } of [
+      { label: 'CT37', action: 'capture' },
+      { label: 'CT38', action: 'reject' },
+    ] as const) {
+      test(
+        `${label} - ${action} on non-existent payment_id returns 404`,
+        { tag: ['@api', '@state-machine'] },
+        async ({ request }) => {
+          // Act
+          const response = await request.post(`/payments/pay_doesnotexist/${action}`);
 
-      // Assert
-      expect(response.status()).toBe(404);
-      const body = await response.json();
-      expect(body.error).toContain('not found');
-    },
-  );
-
-  // ---------------------------------------------------------------------------
-  // CT38 — Reject non-existent payment → 404
-  // ---------------------------------------------------------------------------
-  test(
-    'CT38 - rejecting a non-existent payment_id returns 404',
-    { tag: ['@api', '@state-machine'] },
-    async ({ request }) => {
-      // Act
-      const response = await request.post('/payments/pay_doesnotexist/reject');
-
-      // Assert
-      expect(response.status()).toBe(404);
-      const body = await response.json();
-      expect(body.error).toContain('not found');
-    },
-  );
+          // Assert
+          expect(response.status()).toBe(404);
+          const body = await response.json();
+          expect(body.error).toContain('not found');
+        },
+      );
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // CT40 — State is persisted: GET after capture reflects APPROVED

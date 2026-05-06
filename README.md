@@ -1,6 +1,6 @@
-# Mock Payments API — Quality Automation Suite
+# PaymentQA — Automation Framework for Payment APIs
 
-End-to-end automated test suite for the Mock Payments API, built with **Playwright** (TypeScript) and backed by a **GitHub Actions** CI/CD pipeline. The suite validates payment creation, input validation, idempotency, state transitions, ledger consistency, concurrency safety, and webhook resilience.
+> Production-grade end-to-end automation framework for payment systems, built with **Playwright** (TypeScript) and a **GitHub Actions** CI/CD pipeline. Covers payment creation, input validation, idempotency, state transitions, ledger consistency, concurrency safety, and webhook resilience.
 
 ---
 
@@ -26,7 +26,7 @@ End-to-end automated test suite for the Mock Payments API, built with **Playwrig
 | **Framework** | Playwright `^1.49.0` (API testing via `request` fixture) |
 | **Language** | TypeScript |
 | **API under test** | ASP.NET Core 8 — Clean Architecture + DDD |
-| **Test cases** | 61 test cases across 4 Playwright projects |
+| **Test cases** | 61 automated test cases across 4 Playwright projects |
 | **CI trigger** | PR Gate on every pull request; Full Suite on push to `main` + daily cron |
 | **PR Gate duration** | ~10 s |
 | **Full Suite duration** | ~30 s (3 shards × 2 workers) |
@@ -38,10 +38,10 @@ End-to-end automated test suite for the Mock Payments API, built with **Playwrig
 | Tool | Role |
 |---|---|
 | [Playwright](https://playwright.dev) | Test runner, API client (`request` fixture), parallel project config, CI reporter |
-| TypeScript | Test language (strict types, IDE autocomplete) |
+| TypeScript | Strict types, IDE autocomplete |
 | Docker + Docker Compose | API runtime + webhook sink (required for resilience tests) |
 | GitHub Actions | CI/CD — two jobs: `pr-gate` and `full-suite` |
-| ASP.NET Core 8 (C#) | The system under test |
+| ASP.NET Core 8 (C#) | Payment system under test |
 
 ---
 
@@ -74,9 +74,8 @@ mock-payments-api/
 │   └── workflows/
 │       └── ci.yml                      # pr-gate + full-suite jobs
 ├── docs/
-│   ├── tests-spec.md                   # Test catalogue — all 62 CTs with detail
+│   ├── tests-spec.md                   # Full test catalogue — all 61 CTs with detail
 │   ├── quality-strategy.md             # Risk matrix, metrics, 30-60-90 roadmap
-│   └── relatorio-revisao-suite-testes.md  # AGENTS guide compliance review
 └── examples/
     └── payment-request.json            # Sample request payload
 ```
@@ -85,9 +84,9 @@ mock-payments-api/
 
 ## Test Coverage
 
-### Test cases by area
+### Test cases by domain
 
-| Area | File | Tests | CTs |
+| Domain | File | Tests | CTs |
 |---|---|:---:|---|
 | Payment creation — happy path + idempotency | `payment-creation.spec.ts` | 8 | CT01–CT04, CT06–CT07, CT58, CT59 |
 | Input validation — amount, currency, split | `payment-validation.spec.ts` | 19 | CT08–CT24, CT60, CT61 |
@@ -97,7 +96,6 @@ mock-payments-api/
 | Ledger consistency — shape, amounts, balance | `ledger.spec.ts` | 8 | CT45–CT52 |
 | Webhook resilience — retry, timeout, health | `webhook-resilience.spec.ts` | 5 | CT53–CT57 |
 | **Total** | | **61** | |
-
 
 ### Risk matrix coverage (top risks)
 
@@ -114,7 +112,7 @@ mock-payments-api/
 | Non-existent payment_id returns 200 instead of 404 | 2 | CT37, CT38, CT62 |
 | Idempotency replay returns stale status | 2 | CT63 |
 
-All critical-risk scenarios (score ≥ 6) have 100% automated coverage.
+All critical-risk scenarios (score ≥ 6) have **100% automated coverage**.
 
 ---
 
@@ -131,7 +129,7 @@ All critical-risk scenarios (score ≥ 6) have 100% automated coverage.
 # 1 — Start the API and webhook sink
 docker compose up -d --wait
 
-# 2 — Install test dependencies (first run only)
+# 2 — Install dependencies (first run only)
 npm install
 
 # 3 — Run the full suite
@@ -168,19 +166,6 @@ npx playwright test --grep @idempotency
 npx playwright test --grep @webhook
 ```
 
-### Examples
-
-```bash
-# Fast feedback during development
-npm run test:api
-
-# Validate concurrency guards
-npm run test:concurrency
-
-# Full webhook retry cycle (~12 s for CT56)
-npm run test:resilience
-```
-
 ### Viewing the HTML report
 
 ```bash
@@ -200,8 +185,8 @@ Two GitHub Actions jobs defined in [`.github/workflows/ci.yml`](.github/workflow
 
 ### Pipeline strategy
 
-- **PR Gate blocks merge on failure.** It covers all P0/P1 financial risks using only fast, deterministic tests.
-- **Full Suite runs post-merge.** Slow tests (concurrency, webhook retry) add variance without improving signal on new PRs — they run where a failure triggers an alert but doesn't block a developer's day.
+- **PR Gate blocks merge on failure.** Covers all P0/P1 financial risks using only fast, deterministic tests.
+- **Full Suite runs post-merge.** Slow tests (concurrency, webhook retry) run where a failure triggers an alert but doesn't block the development flow.
 - In-progress runs for the same branch are automatically cancelled to save CI minutes.
 
 ### Artifacts
@@ -216,10 +201,10 @@ Two GitHub Actions jobs defined in [`.github/workflows/ci.yml`](.github/workflow
 
 ## Architecture Under Test
 
-The system under test follows Clean Architecture with DDD building blocks.
+The payment system follows Clean Architecture with DDD building blocks.
 
 ```
-MockPaymentsApi/
+PaymentsApi/
 ├── API/
 │   ├── Controllers/
 │   │   ├── PaymentsController.cs   # POST /payments, GET /payments/{id},
@@ -269,11 +254,11 @@ The `request` fixture provides a typed `APIRequestContext` with built-in paralle
 
 ### `uniqueKey()` on every idempotency test
 
-The API stores idempotency keys in an in-memory `ConcurrentDictionary` that is never cleared between requests (no per-test isolation at the server level). Using `timestamp + random` suffixes guarantees each test run operates on a fresh key space without needing to restart the server.
+The API stores idempotency keys in an in-memory `ConcurrentDictionary` that is never cleared between requests. Using `timestamp + random` suffixes guarantees each run operates on a fresh key space without needing to restart the server.
 
 ### Fail-fast assertions in shared helpers
 
-`createAndCapture`, `createAndReject`, and `createPending` all assert the expected HTTP status code immediately after each network call. Without this, a bug in test setup (e.g. create returning 400) would propagate as a confusing `Cannot read properties of undefined` error three lines later, masking the real cause.
+`createAndCapture`, `createAndReject`, and `createPending` all assert the expected HTTP status code immediately after each network call — preventing silent setup failures from surfacing as misleading downstream errors.
 
 ### `firePost` helper in concurrency tests
 
@@ -285,15 +270,15 @@ Playwright's `APIResponse` body is tied to the lifetime of its `APIRequestContex
 
 ### Webhook tests require Docker
 
-CT53–CT57 call `POST http://localhost:4000/control` to switch the webhook sink's failure mode. They cannot run without Docker. `beforeEach` resets the mode to `ok` before each test; `afterEach` resets it again afterwards — providing symmetric cleanup even when a test throws, preventing mode contamination across tests.
+CT53–CT57 call `POST http://localhost:4000/control` to switch the webhook sink's failure mode. `beforeEach` resets the mode to `ok` before each test; `afterEach` resets it again afterwards — providing symmetric cleanup even when a test throws.
 
 ### Test isolation without a reset endpoint
 
-The API stores all state in `ConcurrentDictionary` instances that live for the container's lifetime. There is no `/reset` endpoint. Isolation is achieved by generating unique identifiers (`uniqueKey()`) and creating new payments per test — keeping the API simple but requiring tests to be additive (never rely on clean state).
+Isolation is achieved by generating unique identifiers (`uniqueKey()`) and creating new payments per test — keeping tests additive and never reliant on clean state.
 
 ### Hard-coded expected values in ledger tests (CT48)
 
-CT48 asserts `seller_1 → 8000` and `platform → 2000` as literals, not as `Math.round((amount * percentage) / 100)`. Recomputing the server's formula in the test is the Mirror anti-pattern — a bug in the formula would pass undetected. Hard-coded values derived from the business rule ("80% of 10 000 = 8 000") are the correct approach.
+CT48 asserts `seller_1 → 8000` and `platform → 2000` as literals, not as `Math.round((amount * percentage) / 100)`. Recomputing the server's formula in the test would mask formula bugs. Hard-coded values derived from the business rule ("80% of 10 000 = 8 000") are the correct approach.
 
 ---
 
@@ -315,7 +300,7 @@ Full documentation in [`docs/quality-strategy.md`](docs/quality-strategy.md) and
 ### Assumptions
 
 1. **API state is not reset between tests.** Tests use `uniqueKey()` and create new payments to avoid collisions.
-2. **Idempotent replay returns HTTP 201 (not 200).** The controller has a single success path (`StatusCode(201, ...)`). The source code is authoritative over any informal documentation.
-3. **`currency` is normalised to uppercase before validation.** The handler calls `command.Currency.ToUpperInvariant()`, so `"brl"` is accepted as valid. Tests for invalid currency use values that remain invalid after normalisation (`"EUR"`, `""`, `"BRL "`).
+2. **Idempotent replay returns HTTP 201 (not 200).** The controller has a single success path (`StatusCode(201, ...)`). The source code is authoritative.
+3. **`currency` is normalised to uppercase before validation.** The handler calls `command.Currency.ToUpperInvariant()`, so `"brl"` is accepted as valid.
 4. **Webhook delivery is fire-and-forget.** `CapturePaymentHandler` returns the HTTP response immediately and dispatches `SendWithRetryAsync` in a background `Task.Run`.
 5. **The webhook sink has no history endpoint.** Webhook delivery is verified indirectly via timing and API health checks.
